@@ -29,12 +29,10 @@ public:
 /** A simple demo synth voice that just plays a sine wave.. */
 class SineWaveVoice  : public SynthesiserVoice
 {
+	float level, angleDelta;
+	unsigned int sampleIdx;
 public:
-    SineWaveVoice()
-        : angleDelta (0.0),
-          tailOff (0.0)
-    {
-    }
+    SineWaveVoice() {}
 
     bool canPlaySound (SynthesiserSound* sound) override
     {
@@ -45,9 +43,8 @@ public:
                     SynthesiserSound* /*sound*/,
                     int /*currentPitchWheelPosition*/) override
     {
-        currentAngle = 0.0;
+		sampleIdx = 0;
         level = velocity * 0.15;
-        tailOff = 0.0;
 
         double cyclesPerSecond = MidiMessage::getMidiNoteInHertz (midiNoteNumber);
         double cyclesPerSample = cyclesPerSecond / getSampleRate();
@@ -57,22 +54,8 @@ public:
 
     void stopNote (float /*velocity*/, bool allowTailOff) override
     {
-        if (allowTailOff)
-        {
-            // start a tail-off by setting this flag. The render callback will pick up on
-            // this and do a fade out, calling clearCurrentNote() when it's finished.
-
-            if (tailOff == 0.0) // we only need to begin a tail-off if it's not already doing so - the
-                                // stopNote method could be called more than once.
-                tailOff = 1.0;
-        }
-        else
-        {
-            // we're being told to stop playing immediately, so reset everything..
-
-            clearCurrentNote();
-            angleDelta = 0.0;
-        }
+		clearCurrentNote();
+		angleDelta = 0.0;
     }
 
     void pitchWheelMoved (int /*newValue*/) override
@@ -87,49 +70,14 @@ public:
 
     void renderNextBlock (AudioSampleBuffer& outputBuffer, int startSample, int numSamples) override
     {
-        if (angleDelta != 0.0)
-        {
-            if (tailOff > 0)
-            {
-                while (--numSamples >= 0)
-                {
-                    const float currentSample = (float) (sin (currentAngle) * level * tailOff);
-
-                    for (int i = outputBuffer.getNumChannels(); --i >= 0;)
-                        outputBuffer.addSample (i, startSample, currentSample);
-
-                    currentAngle += angleDelta;
-                    ++startSample;
-
-                    tailOff *= 0.99;
-
-                    if (tailOff <= 0.005)
-                    {
-                        clearCurrentNote();
-
-                        angleDelta = 0.0;
-                        break;
-                    }
-                }
-            }
-            else
-            {
-                while (--numSamples >= 0)
-                {
-                    const float currentSample = (float) (sin (currentAngle) * level);
-
-                    for (int i = outputBuffer.getNumChannels(); --i >= 0;)
-                        outputBuffer.addSample (i, startSample, currentSample);
-
-                    currentAngle += angleDelta;
-                    ++startSample;
-                }
-            }
-        }
+		for (int localIdx = startSample; localIdx < startSample + numSamples; ++localIdx) {
+			++sampleIdx;
+			float sample = level*sin(sampleIdx * angleDelta);
+			for (int ch = outputBuffer.getNumChannels(); --ch >= 0;) {
+				outputBuffer.addSample(ch, localIdx, sample);
+			}
+		}
     }
-
-private:
-    double currentAngle, angleDelta, level, tailOff;
 };
 
 const float defaultGain = 1.0f;
@@ -150,9 +98,10 @@ JuceDemoPluginAudioProcessor::JuceDemoPluginAudioProcessor()
     delayPosition = 0;
 
     // Initialise the synth...
-    for (int i = 4; --i >= 0;)
-        synth.addVoice (new SineWaveVoice());   // These voices will play our custom sine-wave sounds..
-
+	// At runtime, each note gets assigned to a voice,
+	// so we must create N voices to achieve a polyphony of N.
+    for (int i = 8; --i >= 0;)
+        synth.addVoice (new SineWaveVoice());
     synth.addSound (new SineWaveSound());
 }
 
@@ -248,37 +197,13 @@ void JuceDemoPluginAudioProcessor::reset()
 void JuceDemoPluginAudioProcessor::processBlock (AudioSampleBuffer& buffer, MidiBuffer& midiMessages)
 {
     const int numSamples = buffer.getNumSamples();
-    int channel, dp = 0;
-
-    // Go through the incoming data, and apply our gain to it...
-    for (channel = 0; channel < getNumInputChannels(); ++channel)
-        buffer.applyGain (channel, 0, buffer.getNumSamples(), gain);
-
+	
     // Now pass any incoming midi messages to our keyboard state object, and let it
     // add messages to the buffer if the user is clicking on the on-screen keys
     keyboardState.processNextMidiBuffer (midiMessages, 0, numSamples, true);
 
     // and now get the synth to process these midi events and generate its output.
     synth.renderNextBlock (buffer, midiMessages, 0, numSamples);
-
-    // Apply our delay effect to the new output..
-    for (channel = 0; channel < getNumInputChannels(); ++channel)
-    {
-        float* channelData = buffer.getWritePointer (channel);
-        float* delayData = delayBuffer.getWritePointer (jmin (channel, delayBuffer.getNumChannels() - 1));
-        dp = delayPosition;
-
-        for (int i = 0; i < numSamples; ++i)
-        {
-            const float in = channelData[i];
-            channelData[i] += delayData[dp];
-            delayData[dp] = (delayData[dp] + in) * delay;
-            if (++dp >= delayBuffer.getNumSamples())
-                dp = 0;
-        }
-    }
-
-    delayPosition = dp;
 
     // In case we have more outputs than inputs, we'll clear any output
     // channels that didn't contain input data, (because these aren't
