@@ -8,8 +8,18 @@
   ==============================================================================
 */
 
+#include <thread>
+#include <mutex>
+#include <atomic>
+#include <condition_variable>
+
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+
+//number of samples to buffer at a time.
+//larger numbers means fewer transfefs between CPU / GPU,
+//  but larger latency
+#define BUFFER_BLOCK_SIZE 512
 
 AudioProcessor* JUCE_CALLTYPE createPluginFilter();
 
@@ -29,10 +39,29 @@ public:
 /** A simple demo synth voice that just plays a sine wave.. */
 class SineWaveVoice  : public SynthesiserVoice
 {
-	float level, angleDelta;
+	//we use a double-buffering strategy to allow bufferDrain to be drained into the audio output
+	//  while bufferFill is being filled in in a different thread.
+	//Once bufferDrain is fully drained, it waits for bufferFill to be filled and then swaps the pointers:
+	//  bufferDrain* with bufferFill*, which point to either one of the underlying bufferA, bufferB buffers.
+	float bufferA[BUFFER_BLOCK_SIZE], bufferB[BUFFER_BLOCK_SIZE];
+	std::atomic<bool> isAlive;
+	std::atomic<float> level, angleDelta;
 	unsigned int sampleIdx;
+	std::mutex bufferBMutex;
+	bool needFillBuffer;
+	std::condition_variable needFillBufferCV;
+	std::thread fillThread;
 public:
-    SineWaveVoice() {}
+	SineWaveVoice() : isAlive(true), level(0), angleDelta(0), sampleIdx(0),
+		needFillBuffer(false),
+		fillThread([](SineWaveVoice *v) { v->fillLoop(); }, this) {
+	}
+	~SineWaveVoice() {
+		//signal fillThread to exit
+		isAlive.store(false);
+		needFillBufferCV.notify_one();
+		fillThread.join();
+	}
 
     bool canPlaySound (SynthesiserSound* sound) override
     {
@@ -44,12 +73,12 @@ public:
                     int /*currentPitchWheelPosition*/) override
     {
 		sampleIdx = 0;
-        level = velocity * 0.15;
+		level = velocity * 0.15;
 
-        double cyclesPerSecond = MidiMessage::getMidiNoteInHertz (midiNoteNumber);
-        double cyclesPerSample = cyclesPerSecond / getSampleRate();
+		double cyclesPerSecond = MidiMessage::getMidiNoteInHertz(midiNoteNumber);
+		double cyclesPerSample = cyclesPerSecond / getSampleRate();
 
-        angleDelta = cyclesPerSample * 2.0 * double_Pi;
+		angleDelta = cyclesPerSample * 2.0 * double_Pi;
     }
 
     void stopNote (float /*velocity*/, bool allowTailOff) override
@@ -71,13 +100,44 @@ public:
     void renderNextBlock (AudioSampleBuffer& outputBuffer, int startSample, int numSamples) override
     {
 		for (int localIdx = startSample; localIdx < startSample + numSamples; ++localIdx) {
-			++sampleIdx;
-			float sample = level*sin(sampleIdx * angleDelta);
-			for (int ch = outputBuffer.getNumChannels(); --ch >= 0;) {
-				outputBuffer.addSample(ch, localIdx, sample);
+			if (sampleIdx == BUFFER_BLOCK_SIZE) {
+				sampleIdx = 0;
+				waitAndSwapBuffers();
 			}
+			for (int ch = outputBuffer.getNumChannels(); --ch >= 0;) {
+				outputBuffer.addSample(ch, localIdx, bufferA[sampleIdx]);
+			}
+			++sampleIdx;
 		}
     }
+	void waitAndSwapBuffers() {
+		//acquire lock on buffer B:
+		std::unique_lock<std::mutex> lock(bufferBMutex);
+		//copy buffer B into buffer A:
+		memcpy(bufferA, bufferB, BUFFER_BLOCK_SIZE*sizeof(float));
+		//release buffer B lock and notify the filler thread.
+		needFillBuffer = true;
+		needFillBufferCV.notify_one();
+	}
+	void fillLoop() {
+		unsigned baseIdx = 0;
+		while (1) {
+			//get access to buffer B
+			std::unique_lock<std::mutex> lock(bufferBMutex);
+			//wait until we are asked to fill the buffer, and then clear the flag
+			needFillBufferCV.wait(lock, [this]() { return this->needFillBuffer || !this->isAlive; });
+			if (!isAlive) {
+				return;
+			}
+			this->needFillBuffer = false;
+
+			//fill the buffer
+			for (int i = 0; i < BUFFER_BLOCK_SIZE; ++i) {
+				bufferB[i] = level*sin((baseIdx + i) * angleDelta);
+			}
+			baseIdx += BUFFER_BLOCK_SIZE;
+		}
+	}
 };
 
 const float defaultGain = 1.0f;
@@ -87,6 +147,9 @@ const float defaultDelay = 0.5f;
 JuceDemoPluginAudioProcessor::JuceDemoPluginAudioProcessor()
     : delayBuffer (2, 12000)
 {
+	File* logfile = new File("JuceDemoWithCuda.log");
+	FileLogger* fl = new FileLogger(*logfile, "Juce VST starting", 0);
+	Logger::setCurrentLogger(fl);
     // Set up some default values..
     gain = defaultGain;
     delay = defaultDelay;
@@ -100,7 +163,7 @@ JuceDemoPluginAudioProcessor::JuceDemoPluginAudioProcessor()
     // Initialise the synth...
 	// At runtime, each note gets assigned to a voice,
 	// so we must create N voices to achieve a polyphony of N.
-    for (int i = 8; --i >= 0;)
+    for (int i = 4; --i >= 0;)
         synth.addVoice (new SineWaveVoice());
     synth.addSound (new SineWaveSound());
 }
