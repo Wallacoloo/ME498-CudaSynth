@@ -15,11 +15,8 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
-
-//number of samples to buffer at a time.
-//larger numbers means fewer transfefs between CPU / GPU,
-//  but larger latency
-#define BUFFER_BLOCK_SIZE 512
+#include "kernel.h"
+#include "defines.h"
 
 AudioProcessor* JUCE_CALLTYPE createPluginFilter();
 
@@ -119,6 +116,14 @@ public:
 		needFillBuffer = true;
 		needFillBufferCV.notify_one();
 	}
+	void cpuFill(float *bufferB, unsigned baseIdx) {
+		for (int i = 0; i < BUFFER_BLOCK_SIZE; ++i) {
+			bufferB[i] = level*sin((baseIdx + i) * angleDelta);
+		}
+	}
+	void cudaFill(float *bufferB, unsigned baseIdx) {
+		cudaFillSineWaveVoice(bufferB, baseIdx, level, angleDelta);
+	}
 	void fillLoop() {
 		unsigned baseIdx = 0;
 		while (1) {
@@ -132,9 +137,11 @@ public:
 			this->needFillBuffer = false;
 
 			//fill the buffer
-			for (int i = 0; i < BUFFER_BLOCK_SIZE; ++i) {
-				bufferB[i] = level*sin((baseIdx + i) * angleDelta);
-			}
+			#if USE_CUDA
+				cudaFill(bufferB, baseIdx);
+			#else
+				cpuFill(bufferB, baseIdx);
+			#endif
 			baseIdx += BUFFER_BLOCK_SIZE;
 		}
 	}

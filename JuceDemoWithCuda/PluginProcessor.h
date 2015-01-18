@@ -13,7 +13,6 @@
 
 #include "../JuceLibraryCode/JuceHeader.h"
 
-
 //==============================================================================
 /**
     As the name suggest, this class does the actual audio processing.
