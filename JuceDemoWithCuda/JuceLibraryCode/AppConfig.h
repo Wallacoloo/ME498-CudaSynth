@@ -19,6 +19,10 @@
 
 // (You can add your own code in this section, and the Introjucer will not overwrite it)
 
+//#define JucePlugin_Build_Standalone 1
+//#define JucePlugin_Build_VST 0
+//#define JUCE_64BIT
+
 // [END_USER_CODE_SECTION]
 
 //==============================================================================
