@@ -104,8 +104,8 @@ public:
 				waitAndSwapBuffers();
 			}
 			for (int ch = outputBuffer.getNumChannels(); --ch >= 0;) {
-				//outputBuffer.addSample(ch, localIdx, bufferA[sampleIdx]);
-				outputBuffer.addSample(ch, localIdx, sin(localIdx*0.04));
+				outputBuffer.addSample(ch, localIdx, bufferA[sampleIdx]);
+				//outputBuffer.addSample(ch, localIdx, sin(localIdx*0.04));
 			}
 			++sampleIdx;
 		}
