@@ -46,6 +46,8 @@ private:
 	StandaloneFilterWindow *filterWindow;
 };
 
+//if running standalone, then we must insert the program entry point
+#if !JucePlugin_Build_VST
 //Should be able to use START_JUCE_APPLICATION macro from juice_events/messages/juce_Initialisation.h,
 //but it looks like it's getting empty-defined for some reason, so I copied the macro and inserted it inline:
 //START_JUCE_APPLICATION(StandalonePlugin)
@@ -54,3 +56,4 @@ int main() {
 	juce::JUCEApplicationBase::createInstance = &juce_CreateApplication;
 	return juce::JUCEApplicationBase::main(JUCE_MAIN_FUNCTION_ARGS);
 }
+#endif
