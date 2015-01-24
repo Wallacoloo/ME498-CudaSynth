@@ -52,6 +52,8 @@ public:
 	SineWaveVoice() : isAlive(true), level(0), angleDelta(0), sampleIdx(0),
 		needFillBuffer(false),
 		fillThread([](SineWaveVoice *v) { v->fillLoop(); }, this) {
+		memset(bufferA, 0, BUFFER_BLOCK_SIZE*sizeof(float));
+		memset(bufferB, 0, BUFFER_BLOCK_SIZE*sizeof(float));
 	}
 	~SineWaveVoice() {
 		//signal fillThread to exit
@@ -102,7 +104,8 @@ public:
 				waitAndSwapBuffers();
 			}
 			for (int ch = outputBuffer.getNumChannels(); --ch >= 0;) {
-				outputBuffer.addSample(ch, localIdx, bufferA[sampleIdx]);
+				//outputBuffer.addSample(ch, localIdx, bufferA[sampleIdx]);
+				outputBuffer.addSample(ch, localIdx, sin(localIdx*0.04));
 			}
 			++sampleIdx;
 		}
@@ -154,8 +157,8 @@ const float defaultDelay = 0.5f;
 JuceDemoPluginAudioProcessor::JuceDemoPluginAudioProcessor()
     : delayBuffer (2, 12000)
 {
-	File* logfile = new File("JuceDemoWithCuda.log");
-	FileLogger* fl = new FileLogger(*logfile, "Juce VST starting", 0);
+	File logfile = File::getCurrentWorkingDirectory().getChildFile("JuceDemoWithCuda.log");
+	FileLogger* fl = new FileLogger(logfile, "Juce VST starting", 0);
 	Logger::setCurrentLogger(fl);
     // Set up some default values..
     gain = defaultGain;
