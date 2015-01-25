@@ -1,5 +1,7 @@
 //Can either use CPU processing or Cuda processing
-#define USE_CUDA 0
+#ifndef USE_CUDA
+	#define USE_CUDA 0
+#endif
 
 //number of samples to buffer at a time.
 //larger numbers means fewer transfefs between CPU / GPU,
