@@ -25,6 +25,7 @@ public:
 		filterWindow->setTitleBarButtonsRequired(DocumentWindow::allButtons, false);
 		filterWindow->setVisible(true);
 		filterWindow->setResizable(true, true);
+		filterWindow->getDeviceManager().playTestSound();
 	}
 
 	void shutdown()
