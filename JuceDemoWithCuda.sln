@@ -17,9 +17,10 @@ Global
 		Standalone-Debug-NoCuda|x64 = Standalone-Debug-NoCuda|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{AD0595DD-8B69-4F25-9E3A-873E96E9D4F6}.Debug|Win32.ActiveCfg = Debug|x64
-		{AD0595DD-8B69-4F25-9E3A-873E96E9D4F6}.Debug|x64.ActiveCfg = Debug|x64
-		{AD0595DD-8B69-4F25-9E3A-873E96E9D4F6}.Debug|x64.Build.0 = Debug|x64
+		{AD0595DD-8B69-4F25-9E3A-873E96E9D4F6}.Debug|Win32.ActiveCfg = Standalone-Debug-NoCuda|Win32
+		{AD0595DD-8B69-4F25-9E3A-873E96E9D4F6}.Debug|Win32.Build.0 = Standalone-Debug-NoCuda|Win32
+		{AD0595DD-8B69-4F25-9E3A-873E96E9D4F6}.Debug|x64.ActiveCfg = Standalone-Debug-NoCuda|x64
+		{AD0595DD-8B69-4F25-9E3A-873E96E9D4F6}.Debug|x64.Build.0 = Standalone-Debug-NoCuda|x64
 		{AD0595DD-8B69-4F25-9E3A-873E96E9D4F6}.Release|Win32.ActiveCfg = Release|Win32
 		{AD0595DD-8B69-4F25-9E3A-873E96E9D4F6}.Release|Win32.Build.0 = Release|Win32
 		{AD0595DD-8B69-4F25-9E3A-873E96E9D4F6}.Release|x64.ActiveCfg = Release|x64

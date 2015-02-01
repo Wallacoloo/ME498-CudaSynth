@@ -18,15 +18,17 @@
 #include "kernel.h"
 #include "defines.h"
 
+#ifndef PI
+	#define PI 3.14159265358979323846
+#endif
+
 AudioProcessor* JUCE_CALLTYPE createPluginFilter();
 
 
-//==============================================================================
-/** A demo synth sound that's just a basic sine wave.. */
-class SineWaveSound : public SynthesiserSound
+class AdditiveSynthSound : public SynthesiserSound
 {
 public:
-    SineWaveSound() {}
+    AdditiveSynthSound() {}
 
     bool appliesToNote (int /*midiNoteNumber*/) override  { return true; }
     bool appliesToChannel (int /*midiChannel*/) override  { return true; }
@@ -34,28 +36,28 @@ public:
 
 //==============================================================================
 /** A simple demo synth voice that just plays a sine wave.. */
-class SineWaveVoice  : public SynthesiserVoice
+class AdditiveSynthVoice  : public SynthesiserVoice
 {
 	//we use a double-buffering strategy to allow bufferDrain to be drained into the audio output
 	//  while bufferFill is being filled in in a different thread.
 	//Once bufferDrain is fully drained, it waits for bufferFill to be filled and then swaps the pointers:
 	//  bufferDrain* with bufferFill*, which point to either one of the underlying bufferA, bufferB buffers.
-	float bufferA[BUFFER_BLOCK_SIZE], bufferB[BUFFER_BLOCK_SIZE];
+	float bufferA[BUFFER_BLOCK_SIZE*NUM_CH], bufferB[BUFFER_BLOCK_SIZE*NUM_CH];
 	std::atomic<bool> isAlive;
-	std::atomic<float> level, angleDelta;
+	std::atomic<float> fundamentalFreq;
 	unsigned int sampleIdx;
 	std::mutex bufferBMutex;
 	bool needFillBuffer;
 	std::condition_variable needFillBufferCV;
 	std::thread fillThread;
 public:
-	SineWaveVoice() : isAlive(true), level(0), angleDelta(0), sampleIdx(0),
+	AdditiveSynthVoice() : isAlive(true), fundamentalFreq(0), sampleIdx(0),
 		needFillBuffer(false),
-		fillThread([](SineWaveVoice *v) { v->fillLoop(); }, this) {
-		memset(bufferA, 0, BUFFER_BLOCK_SIZE*sizeof(float));
-		memset(bufferB, 0, BUFFER_BLOCK_SIZE*sizeof(float));
+		fillThread([](AdditiveSynthVoice *v) { v->fillLoop(); }, this) {
+		memset(bufferA, 0, BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float));
+		memset(bufferB, 0, BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float));
 	}
-	~SineWaveVoice() {
+	~AdditiveSynthVoice() {
 		//signal fillThread to exit
 		isAlive.store(false);
 		needFillBufferCV.notify_one();
@@ -64,7 +66,7 @@ public:
 
     bool canPlaySound (SynthesiserSound* sound) override
     {
-        return dynamic_cast<SineWaveSound*> (sound) != nullptr;
+		return dynamic_cast<AdditiveSynthSound*> (sound) != nullptr;
     }
 
     void startNote (int midiNoteNumber, float velocity,
@@ -72,18 +74,20 @@ public:
                     int /*currentPitchWheelPosition*/) override
     {
 		sampleIdx = 0;
-		level = velocity * 0.15;
+		//level = velocity * 0.15;
 
 		double cyclesPerSecond = MidiMessage::getMidiNoteInHertz(midiNoteNumber);
-		double cyclesPerSample = cyclesPerSecond / getSampleRate();
+		//double cyclesPerSample = cyclesPerSecond / getSampleRate();
+		assert(getSampleRate() == SAMPLE_RATE);
+		fundamentalFreq = cyclesPerSecond * 2*PI;
 
-		angleDelta = cyclesPerSample * 2.0 * double_Pi;
+		//angleDelta = cyclesPerSample * 2.0 * double_Pi;
     }
 
     void stopNote (float /*velocity*/, bool allowTailOff) override
     {
 		clearCurrentNote();
-		angleDelta = 0.0;
+		fundamentalFreq = 0.0;
     }
 
     void pitchWheelMoved (int /*newValue*/) override
@@ -104,7 +108,7 @@ public:
 				waitAndSwapBuffers();
 			}
 			for (int ch = outputBuffer.getNumChannels(); --ch >= 0;) {
-				outputBuffer.addSample(ch, localIdx, bufferA[sampleIdx]);
+				outputBuffer.addSample(ch, localIdx, bufferA[sampleIdx*2+ch]);
 			}
 			++sampleIdx;
 		}
@@ -113,19 +117,12 @@ public:
 		//acquire lock on buffer B:
 		std::unique_lock<std::mutex> lock(bufferBMutex);
 		//copy buffer B into buffer A:
-		memcpy(bufferA, bufferB, BUFFER_BLOCK_SIZE*sizeof(float));
+		memcpy(bufferA, bufferB, BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float));
 		//release buffer B lock and notify the filler thread.
 		needFillBuffer = true;
 		needFillBufferCV.notify_one();
 	}
-	void cpuFill(float *bufferB, unsigned baseIdx) {
-		for (int i = 0; i < BUFFER_BLOCK_SIZE; ++i) {
-			bufferB[i] = level*sin((baseIdx + i) * angleDelta);
-		}
-	}
-	void cudaFill(float *bufferB, unsigned baseIdx) {
-		cudaFillSineWaveVoice(bufferB, baseIdx, level, angleDelta);
-	}
+
 	void fillLoop() {
 		unsigned baseIdx = 0;
 		while (1) {
@@ -139,11 +136,7 @@ public:
 			this->needFillBuffer = false;
 
 			//fill the buffer
-			#if USE_CUDA
-				cudaFill(bufferB, baseIdx);
-			#else
-				cpuFill(bufferB, baseIdx);
-			#endif
+			fillSineWaveVoice(bufferB, baseIdx, fundamentalFreq);
 			baseIdx += BUFFER_BLOCK_SIZE;
 		}
 	}
@@ -173,8 +166,8 @@ JuceDemoPluginAudioProcessor::JuceDemoPluginAudioProcessor()
 	// At runtime, each note gets assigned to a voice,
 	// so we must create N voices to achieve a polyphony of N.
     for (int i = 4; --i >= 0;)
-        synth.addVoice (new SineWaveVoice());
-    synth.addSound (new SineWaveSound());
+		synth.addVoice(new AdditiveSynthVoice());
+	synth.addSound(new AdditiveSynthSound());
 }
 
 JuceDemoPluginAudioProcessor::~JuceDemoPluginAudioProcessor()

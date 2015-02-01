@@ -1,1 +1,1 @@
-void cudaFillSineWaveVoice(float *bufferB, unsigned baseIdx, float level, float angleDelta);
+void fillSineWaveVoice(float *bufferB, unsigned baseIdx, float fundamentalFreq);
