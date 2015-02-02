@@ -13,6 +13,8 @@
 
 #include "../JuceLibraryCode/JuceHeader.h"
 #include "PluginProcessor.h"
+#include "PartialLevelsComponent.h"
+#include "defines.h"
 
 
 //==============================================================================
@@ -33,9 +35,11 @@ public:
     void sliderValueChanged (Slider*) override;
 
 private:
+	float partialLevels[NUM_PARTIALS];
     MidiKeyboardComponent midiKeyboard;
     Label infoLabel, gainLabel, delayLabel;
     Slider gainSlider, delaySlider;
+	PartialLevelsComponent partialLevelsComponent;
     ScopedPointer<ResizableCornerComponent> resizer;
     ComponentBoundsConstrainer resizeLimits;
 

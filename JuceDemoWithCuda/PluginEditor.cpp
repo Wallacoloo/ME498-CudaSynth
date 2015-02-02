@@ -10,6 +10,7 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+//#include "PartialLevelsComponent.h"
 
 //==============================================================================
 JuceDemoPluginAudioProcessorEditor::JuceDemoPluginAudioProcessorEditor (JuceDemoPluginAudioProcessor& owner)
@@ -19,16 +20,22 @@ JuceDemoPluginAudioProcessorEditor::JuceDemoPluginAudioProcessorEditor (JuceDemo
       gainLabel ("", "Throughput level:"),
       delayLabel ("", "Delay:"),
       gainSlider ("gain"),
-      delaySlider ("delay")
+      delaySlider ("delay"),
+	  partialLevelsComponent(partialLevels)
 {
-    // add some sliders..
+	addAndMakeVisible(partialLevelsComponent);
+    /*// add some sliders..
     addAndMakeVisible (gainSlider);
-    gainSlider.setSliderStyle (Slider::Rotary);
+    //gainSlider.setSliderStyle (Slider::Rotary);
+	gainSlider.setSliderStyle(Slider::LinearVertical);
     gainSlider.addListener (this);
     gainSlider.setRange (0.0, 1.0, 0.01);
+	//gainSlider.setSize(2, gainSlider.getHeight());
+	//gainSlider.setTransform(AffineTransform().scaled(0.1, 1.0));
 
     addAndMakeVisible (delaySlider);
-    delaySlider.setSliderStyle (Slider::Rotary);
+    //delaySlider.setSliderStyle (Slider::Rotary);
+	delaySlider.setSliderStyle(Slider::LinearVertical);
     delaySlider.addListener (this);
     delaySlider.setRange (0.0, 1.0, 0.01);
 
@@ -37,14 +44,14 @@ JuceDemoPluginAudioProcessorEditor::JuceDemoPluginAudioProcessorEditor (JuceDemo
     gainLabel.setFont (Font (11.0f));
 
     delayLabel.attachToComponent (&delaySlider, false);
-    delayLabel.setFont (Font (11.0f));
+    delayLabel.setFont (Font (11.0f));*/
 
     // add the midi keyboard component..
     addAndMakeVisible (midiKeyboard);
 
-    // add a label that will display the current timecode and status..
+    /*// add a label that will display the current timecode and status..
     addAndMakeVisible (infoLabel);
-    infoLabel.setColour (Label::textColourId, Colours::blue);
+    infoLabel.setColour (Label::textColourId, Colours::blue);*/
 
     // add the triangular resizer component for the bottom-right of the UI
     addAndMakeVisible (resizer = new ResizableCornerComponent (this, &resizeLimits));
