@@ -5,6 +5,7 @@
 #include <math.h>
 #include <string.h> //for memset
 #include <assert.h>
+#include <stdlib.h> //for atexit
 
 #include "defines.h"
 
@@ -13,8 +14,24 @@
 __shared__ float partialReductionOutputs[NUM_PARTIALS*NUM_CH];
 
 void checkCudaError(cudaError_t e) {
-	assert(e == cudaSuccess);
+	if (e != cudaSuccess) {
+		printf("Cuda Error: %s\n", cudaGetErrorString(e));
+		printf("Aborting\n");
+		exit(1);
+	}
 }
+
+// code to run at shutdown (free buffers, etc)
+void teardown() {
+
+}
+
+// code to run on first-time audio calculation
+void startup() {
+	atexit(&teardown);
+
+}
+
 
 bool _hasCudaDevice() {
 	int deviceCount;
@@ -94,12 +111,16 @@ __host__ void fillSineWaveOnCpu(float *buffer, unsigned baseIdx, float fundament
 __host__ void fillSineWaveCuda(float *bufferB, unsigned baseIdx, float fundamentalFreq) {
 	float *gpuOutBuff;
 	//allocate buffer memory. No need for it to be zero'd
-	cudaMalloc(&gpuOutBuff,    BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float));
+	checkCudaError(cudaMalloc(&gpuOutBuff,    BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float)));
 	fillSineWaveKernel << <1, NUM_PARTIALS >> >(gpuOutBuff, baseIdx, fundamentalFreq);
+	checkCudaError(cudaGetLastError()); //check if error in kernel launch
+
+	checkCudaError(cudaDeviceSynchronize()); //check for error INSIDE the kernel
+
 	//copy memory into the cpu buffer
 	//Note: this will wait for the kernel to complete first.
-	cudaMemcpy(bufferB, gpuOutBuff, BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float), cudaMemcpyDeviceToHost);
-	cudaFree(gpuOutBuff);
+	checkCudaError(cudaMemcpy(bufferB, gpuOutBuff, BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float), cudaMemcpyDeviceToHost));
+	checkCudaError(cudaFree(gpuOutBuff));
 }
 
 void fillSineWaveVoice(float *bufferB, unsigned baseIdx, float fundamentalFreq) {
