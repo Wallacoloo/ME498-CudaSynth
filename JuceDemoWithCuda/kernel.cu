@@ -4,12 +4,32 @@
 #include <stdio.h>
 #include <math.h>
 #include <string.h> //for memset
+#include <assert.h>
 
 #include "defines.h"
 
 // When summing the outputs at a specific frame for each partial, we use a reduction method.
 // This reduction method requires a temporary array in shared memory.
 __shared__ float partialReductionOutputs[NUM_PARTIALS*NUM_CH];
+
+void checkCudaError(cudaError_t e) {
+	assert(e == cudaSuccess);
+}
+
+bool _hasCudaDevice() {
+	int deviceCount;
+	cudaError_t err = cudaGetDeviceCount(&deviceCount);
+	// if we get a cuda error, it may be because the system has no cuda dlls.
+	bool useCuda = (err == cudaSuccess && deviceCount != 0);
+	printf("Using Cuda? %i\n", useCuda);
+	return useCuda;
+}
+
+bool hasCudaDevice() {
+	//only check for the presence of a device once.
+	static bool hasDevice = _hasCudaDevice();
+	return hasDevice;
+}
 
 __device__ __host__ void reduceOutputs(float *buffer, unsigned partialIdx, int sampleIdx, float outputL, float outputR) {
 	//algorithm: given 8 outputs, [0, 1, 2, 3, 4, 5, 6, 7]
@@ -83,9 +103,9 @@ __host__ void fillSineWaveCuda(float *bufferB, unsigned baseIdx, float fundament
 }
 
 void fillSineWaveVoice(float *bufferB, unsigned baseIdx, float fundamentalFreq) {
-	#if USE_CUDA
+	if (hasCudaDevice()) {
 		fillSineWaveCuda(bufferB, baseIdx, fundamentalFreq);
-	#else
+	} else {
 		fillSineWaveOnCpu(bufferB, baseIdx, fundamentalFreq);
-	#endif
+	}
 }
