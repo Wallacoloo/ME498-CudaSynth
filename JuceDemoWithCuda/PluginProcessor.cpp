@@ -74,20 +74,16 @@ public:
                     int /*currentPitchWheelPosition*/) override
     {
 		sampleIdx = 0;
-		//level = velocity * 0.15;
 
 		double cyclesPerSecond = MidiMessage::getMidiNoteInHertz(midiNoteNumber);
-		//double cyclesPerSample = cyclesPerSecond / getSampleRate();
 		assert(getSampleRate() == SAMPLE_RATE);
 		fundamentalFreq = cyclesPerSecond * 2*PI;
 
-		//angleDelta = cyclesPerSample * 2.0 * double_Pi;
     }
 
     void stopNote (float /*velocity*/, bool allowTailOff) override
     {
 		clearCurrentNote();
-		fundamentalFreq = 0.0;
     }
 
     void pitchWheelMoved (int /*newValue*/) override
@@ -102,13 +98,16 @@ public:
 
     void renderNextBlock (AudioSampleBuffer& outputBuffer, int startSample, int numSamples) override
     {
+		if (!isVoiceActive()) {
+			return;
+		}
 		for (int localIdx = startSample; localIdx < startSample + numSamples; ++localIdx) {
 			if (sampleIdx == BUFFER_BLOCK_SIZE) {
 				sampleIdx = 0;
 				waitAndSwapBuffers();
 			}
 			for (int ch = outputBuffer.getNumChannels(); --ch >= 0;) {
-				outputBuffer.addSample(ch, localIdx, bufferA[sampleIdx*2+ch]);
+				outputBuffer.addSample(ch, localIdx, bufferA[sampleIdx * 2 + ch]);
 			}
 			++sampleIdx;
 		}
