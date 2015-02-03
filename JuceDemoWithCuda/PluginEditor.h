@@ -14,7 +14,7 @@
 #include "../JuceLibraryCode/JuceHeader.h"
 #include "PluginProcessor.h"
 #include "PartialLevelsComponent.h"
-#include "defines.h"
+#include "kernel.h"
 
 
 //==============================================================================
@@ -35,22 +35,16 @@ public:
     void sliderValueChanged (Slider*) override;
 
 private:
-	float partialLevels[NUM_PARTIALS];
+	ParameterStates parameterStates;
     MidiKeyboardComponent midiKeyboard;
-    Label infoLabel, gainLabel, delayLabel;
-    Slider gainSlider, delaySlider;
 	PartialLevelsComponent partialLevelsComponent;
     ScopedPointer<ResizableCornerComponent> resizer;
     ComponentBoundsConstrainer resizeLimits;
-
-    AudioPlayHead::CurrentPositionInfo lastDisplayedPosition;
 
     JuceDemoPluginAudioProcessor& getProcessor() const
     {
         return static_cast<JuceDemoPluginAudioProcessor&> (processor);
     }
-
-    void displayPositionInfo (const AudioPlayHead::CurrentPositionInfo& pos);
 };
 
 

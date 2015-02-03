@@ -16,42 +16,12 @@
 JuceDemoPluginAudioProcessorEditor::JuceDemoPluginAudioProcessorEditor (JuceDemoPluginAudioProcessor& owner)
     : AudioProcessorEditor (owner),
       midiKeyboard (owner.keyboardState, MidiKeyboardComponent::horizontalKeyboard),
-      infoLabel (String::empty),
-      gainLabel ("", "Throughput level:"),
-      delayLabel ("", "Delay:"),
-      gainSlider ("gain"),
-      delaySlider ("delay"),
-	  partialLevelsComponent(partialLevels)
+	  partialLevelsComponent(parameterStates.partialLevels)
 {
 	addAndMakeVisible(partialLevelsComponent);
-    /*// add some sliders..
-    addAndMakeVisible (gainSlider);
-    //gainSlider.setSliderStyle (Slider::Rotary);
-	gainSlider.setSliderStyle(Slider::LinearVertical);
-    gainSlider.addListener (this);
-    gainSlider.setRange (0.0, 1.0, 0.01);
-	//gainSlider.setSize(2, gainSlider.getHeight());
-	//gainSlider.setTransform(AffineTransform().scaled(0.1, 1.0));
-
-    addAndMakeVisible (delaySlider);
-    //delaySlider.setSliderStyle (Slider::Rotary);
-	delaySlider.setSliderStyle(Slider::LinearVertical);
-    delaySlider.addListener (this);
-    delaySlider.setRange (0.0, 1.0, 0.01);
-
-    // add some labels for the sliders..
-    gainLabel.attachToComponent (&gainSlider, false);
-    gainLabel.setFont (Font (11.0f));
-
-    delayLabel.attachToComponent (&delaySlider, false);
-    delayLabel.setFont (Font (11.0f));*/
 
     // add the midi keyboard component..
     addAndMakeVisible (midiKeyboard);
-
-    /*// add a label that will display the current timecode and status..
-    addAndMakeVisible (infoLabel);
-    infoLabel.setColour (Label::textColourId, Colours::blue);*/
 
     // add the triangular resizer component for the bottom-right of the UI
     addAndMakeVisible (resizer = new ResizableCornerComponent (this, &resizeLimits));
@@ -78,9 +48,9 @@ void JuceDemoPluginAudioProcessorEditor::paint (Graphics& g)
 
 void JuceDemoPluginAudioProcessorEditor::resized()
 {
-    infoLabel.setBounds (10, 4, 400, 25);
+    /*infoLabel.setBounds (10, 4, 400, 25);
     gainSlider.setBounds (20, 60, 150, 40);
-    delaySlider.setBounds (200, 60, 150, 40);
+    delaySlider.setBounds (200, 60, 150, 40);*/
 
     const int keyboardHeight = 70;
     midiKeyboard.setBounds (4, getHeight() - keyboardHeight - 4, getWidth() - 8, keyboardHeight);
@@ -95,7 +65,7 @@ void JuceDemoPluginAudioProcessorEditor::resized()
 // This timer periodically checks whether any of the filter's parameters have changed...
 void JuceDemoPluginAudioProcessorEditor::timerCallback()
 {
-    JuceDemoPluginAudioProcessor& ourProcessor = getProcessor();
+    /*JuceDemoPluginAudioProcessor& ourProcessor = getProcessor();
 
     AudioPlayHead::CurrentPositionInfo newPos (ourProcessor.lastPosInfo);
 
@@ -103,13 +73,13 @@ void JuceDemoPluginAudioProcessorEditor::timerCallback()
         displayPositionInfo (newPos);
 
     gainSlider.setValue (ourProcessor.gain, dontSendNotification);
-    delaySlider.setValue (ourProcessor.delay, dontSendNotification);
+    delaySlider.setValue (ourProcessor.delay, dontSendNotification);*/
 }
 
 // This is our Slider::Listener callback, when the user drags a slider.
 void JuceDemoPluginAudioProcessorEditor::sliderValueChanged (Slider* slider)
 {
-    if (slider == &gainSlider)
+    /*if (slider == &gainSlider)
     {
         // It's vital to use setParameterNotifyingHost to change any parameters that are automatable
         // by the host, rather than just modifying them directly, otherwise the host won't know
@@ -121,64 +91,5 @@ void JuceDemoPluginAudioProcessorEditor::sliderValueChanged (Slider* slider)
     {
         getProcessor().setParameterNotifyingHost (JuceDemoPluginAudioProcessor::delayParam,
                                                   (float) delaySlider.getValue());
-    }
-}
-
-//==============================================================================
-// quick-and-dirty function to format a timecode string
-static String timeToTimecodeString (const double seconds)
-{
-    const double absSecs = std::abs (seconds);
-
-    const int hours =  (int) (absSecs / (60.0 * 60.0));
-    const int mins  = ((int) (absSecs / 60.0)) % 60;
-    const int secs  = ((int) absSecs) % 60;
-
-    String s (seconds < 0 ? "-" : "");
-
-    s << String (hours).paddedLeft ('0', 2) << ":"
-      << String (mins) .paddedLeft ('0', 2) << ":"
-      << String (secs) .paddedLeft ('0', 2) << ":"
-      << String (roundToInt (absSecs * 1000) % 1000).paddedLeft ('0', 3);
-
-    return s;
-}
-
-// quick-and-dirty function to format a bars/beats string
-static String ppqToBarsBeatsString (double ppq, double /*lastBarPPQ*/, int numerator, int denominator)
-{
-    if (numerator == 0 || denominator == 0)
-        return "1|1|0";
-
-    const int ppqPerBar = (numerator * 4 / denominator);
-    const double beats  = (fmod (ppq, ppqPerBar) / ppqPerBar) * numerator;
-
-    const int bar    = ((int) ppq) / ppqPerBar + 1;
-    const int beat   = ((int) beats) + 1;
-    const int ticks  = ((int) (fmod (beats, 1.0) * 960.0 + 0.5));
-
-    String s;
-    s << bar << '|' << beat << '|' << ticks;
-    return s;
-}
-
-// Updates the text in our position label.
-void JuceDemoPluginAudioProcessorEditor::displayPositionInfo (const AudioPlayHead::CurrentPositionInfo& pos)
-{
-    lastDisplayedPosition = pos;
-    String displayText;
-    displayText.preallocateBytes (128);
-
-    displayText << String (pos.bpm, 2) << " bpm, "
-                << pos.timeSigNumerator << '/' << pos.timeSigDenominator
-                << "  -  " << timeToTimecodeString (pos.timeInSeconds)
-                << "  -  " << ppqToBarsBeatsString (pos.ppqPosition, pos.ppqPositionOfLastBarStart,
-                                                    pos.timeSigNumerator, pos.timeSigDenominator);
-
-    if (pos.isRecording)
-        displayText << "  (recording)";
-    else if (pos.isPlaying)
-        displayText << "  (playing)";
-
-    infoLabel.setText ("[" + SystemStats::getJUCEVersion() + "]   " + displayText, dontSendNotification);
+    }*/
 }

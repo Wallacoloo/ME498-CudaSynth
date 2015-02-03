@@ -1,3 +1,6 @@
+#ifndef KERNEL_H
+#define KERNEL_H
+
 #include "defines.h"
 
 // Struct to hold ALL parameter states at a single instant in time.
@@ -11,3 +14,5 @@ struct ParameterStates {
 };
 
 void fillSineWaveVoice(float *bufferB, unsigned baseIdx, float fundamentalFreq, const ParameterStates *newParameters=NULL);
+
+#endif
