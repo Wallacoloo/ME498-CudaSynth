@@ -1,6 +1,7 @@
+#include "kernel.h"
+
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
-
 #include <stdio.h>
 #include <math.h>
 #include <string.h> //for memset
@@ -11,13 +12,26 @@
 
 #define CIRCULAR_BUFFER_LEN MAX_DELAY_EFFECT_LENGTH
 
+// Contains info about the parameter states at ANY sample in the block
+struct FullBlockParameterInfo {
+	ParameterStates start;
+	ParameterStates end;
+};
+
+// Packages all the state-related information for the synth in one class to store persistently on the device
+struct SynthState {
+	FullBlockParameterInfo parameterInfo;
+	float sampleBuffer[CIRCULAR_BUFFER_LEN*NUM_CH];
+};
+
 // When summing the outputs at a specific frame for each partial, we use a reduction method.
 // This reduction method requires a temporary array in shared memory.
 __shared__ float partialReductionOutputs[NUM_PARTIALS*NUM_CH];
 
 // this is a circular buffer of sample data (interleaved by channel number) stored on the device
 // It is persistent and lengthy, in order to accomodate the delay effect.
-float *d_sampleBuffer = NULL;
+SynthState *d_synthState = NULL;
+
 
 void checkCudaError(cudaError_t e) {
 	if (e != cudaSuccess) {
@@ -45,14 +59,14 @@ bool hasCudaDevice() {
 // code to run at shutdown (free buffers, etc)
 void teardown() {
 	// free the sample buffer if we allocated it and it hasn't already been freed.
-	if (d_sampleBuffer != NULL) {
+	if (d_synthState != NULL) {
 		if (hasCudaDevice()) {
-			checkCudaError(cudaFree(d_sampleBuffer));
+			checkCudaError(cudaFree(d_synthState));
 		} else {
-			free(d_sampleBuffer);
+			free(d_synthState);
 		}
 		// avoid double-frees
-		d_sampleBuffer = NULL;
+		d_synthState = NULL;
 	}
 }
 
@@ -61,10 +75,10 @@ void startup() {
 	atexit(&teardown);
 	if (hasCudaDevice()) {
 		// allocate sample buffer on device
-		checkCudaError(cudaMalloc(&d_sampleBuffer, CIRCULAR_BUFFER_LEN*NUM_CH*sizeof(float)));
+		checkCudaError(cudaMalloc(&d_synthState, sizeof(SynthState)));
 	} else {
 		// allocate sample buffer on cpu
-		d_sampleBuffer = (float*)malloc(CIRCULAR_BUFFER_LEN*NUM_CH*sizeof(float));
+		d_synthState = (SynthState*)malloc(sizeof(SynthState));
 	}
 }
 
@@ -77,7 +91,7 @@ void doStartupOnce() {
 }
 
 
-__device__ __host__ void reduceOutputs(float *buffer, unsigned partialIdx, int sampleIdx, float outputL, float outputR) {
+__device__ __host__ void reduceOutputs(SynthState *synthState, unsigned partialIdx, int sampleIdx, float outputL, float outputR) {
 	//algorithm: given 8 outputs, [0, 1, 2, 3, 4, 5, 6, 7]
 	//first iteration: 4 active threads. 
 	//  Thread 0 adds i0 to i(0+4). Thread 1 adds i1 to i(1+4). Thread 2 adds i2 to i(2+4). Thread 3 adds i3 to i(3+4)
@@ -102,47 +116,55 @@ __device__ __host__ void reduceOutputs(float *buffer, unsigned partialIdx, int s
 			numActiveThreads /= 2;
 		}
 		if (partialIdx == 0) {
-			buffer[bufferIdx + 0] = partialReductionOutputs[0];
-			buffer[bufferIdx + 1] = partialReductionOutputs[1];
+			synthState->sampleBuffer[bufferIdx + 0] = partialReductionOutputs[0];
+			synthState->sampleBuffer[bufferIdx + 1] = partialReductionOutputs[1];
 		}
 	#else
 		//host code
 		//Since everything's computed iteratively, we can just add our outputs directly to the buffer.
 		//First write to this sample must zero-initialize the buffer (not required in the GPU code).
 		if (partialIdx == 0) {
-			buffer[bufferIdx + 0] = 0;
-			buffer[bufferIdx + 1] = 0;
+			synthState->sampleBuffer[bufferIdx + 0] = 0;
+			synthState->sampleBuffer[bufferIdx + 1] = 0;
 		}
-		buffer[bufferIdx + 0] += outputL;
-		buffer[bufferIdx + 1] += outputR;
+		synthState->sampleBuffer[bufferIdx + 0] += outputL;
+		synthState->sampleBuffer[bufferIdx + 1] += outputR;
 	#endif
 }
 
 
-__device__ __host__ void computePartialOutput(float *buffer, unsigned baseIdx, unsigned partialIdx, float fundamentalFreq) {
+__device__ __host__ void computePartialOutput(SynthState *synthState, unsigned baseIdx, unsigned partialIdx, float fundamentalFreq) {
 	float angleDelta = fundamentalFreq * INV_SAMPLE_RATE * (partialIdx+1);
 	for (int sampleIdx = 0; sampleIdx < BUFFER_BLOCK_SIZE; ++sampleIdx) {
 		float outputL, outputR;
 		outputL = outputR = (1.0/NUM_PARTIALS)*sinf((baseIdx + sampleIdx) * angleDelta);
-		reduceOutputs(buffer, partialIdx, baseIdx+sampleIdx, outputL, outputR);
+		reduceOutputs(synthState, partialIdx, baseIdx+sampleIdx, outputL, outputR);
 	}
 }
 
-__global__ void fillSineWaveKernel(float *buffer, unsigned baseIdx, float fundamentalFreq) {
+__global__ void fillSineWaveKernel(SynthState *synthState, unsigned baseIdx, float fundamentalFreq) {
 	int partialNum = threadIdx.x;
-	computePartialOutput(buffer, baseIdx, partialNum, fundamentalFreq);
+	computePartialOutput(synthState, baseIdx, partialNum, fundamentalFreq);
 }
 
-__host__ void fillSineWaveOnCpu(float *bufferB, unsigned sampleIdx, float fundamentalFreq) {
+__host__ void fillSineWaveOnCpu(float *bufferB, unsigned sampleIdx, float fundamentalFreq, const ParameterStates *newParameters) {
+	// update the ending parameter states of this block
+	if (newParameters) {
+		memcpy(&d_synthState->parameterInfo.end, newParameters, sizeof(ParameterStates));
+	}
 	for (int partialIdx = 0; partialIdx < NUM_PARTIALS; ++partialIdx) {
-		computePartialOutput(d_sampleBuffer, sampleIdx, partialIdx, fundamentalFreq);
+		computePartialOutput(d_synthState, sampleIdx, partialIdx, fundamentalFreq);
 	}
 	unsigned bufferStartIdx = NUM_CH * (sampleIdx % CIRCULAR_BUFFER_LEN);
-	memcpy(bufferB, &d_sampleBuffer[bufferStartIdx], BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float));
+	memcpy(bufferB, &d_synthState->sampleBuffer[bufferStartIdx], BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float));
 }
 
-__host__ void fillSineWaveCuda(float *bufferB, unsigned sampleIdx, float fundamentalFreq) {
-	fillSineWaveKernel << <1, NUM_PARTIALS >> >(d_sampleBuffer, sampleIdx, fundamentalFreq);
+__host__ void fillSineWaveCuda(float *bufferB, unsigned sampleIdx, float fundamentalFreq, const ParameterStates *newParameters) {
+	// update the ending parameter states of this block
+	if (newParameters) {
+		checkCudaError(cudaMemcpy(&d_synthState->parameterInfo.end, newParameters, sizeof(ParameterStates), cudaMemcpyHostToDevice));
+	}
+	fillSineWaveKernel << <1, NUM_PARTIALS >> >(d_synthState, sampleIdx, fundamentalFreq);
 
 	checkCudaError(cudaGetLastError()); //check if error in kernel launch
 	checkCudaError(cudaDeviceSynchronize()); //check for error INSIDE the kernel
@@ -150,14 +172,14 @@ __host__ void fillSineWaveCuda(float *bufferB, unsigned sampleIdx, float fundame
 	//copy memory into the cpu buffer
 	//Note: this will wait for the kernel to complete first.
 	unsigned bufferStartIdx = NUM_CH * (sampleIdx % CIRCULAR_BUFFER_LEN);
-	checkCudaError(cudaMemcpy(bufferB, &d_sampleBuffer[bufferStartIdx], BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float), cudaMemcpyDeviceToHost));
+	checkCudaError(cudaMemcpy(bufferB, &d_synthState->sampleBuffer[bufferStartIdx], BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float), cudaMemcpyDeviceToHost));
 }
 
-void fillSineWaveVoice(float *bufferB, unsigned baseIdx, float fundamentalFreq) {
+void fillSineWaveVoice(float *bufferB, unsigned baseIdx, float fundamentalFreq, const ParameterStates *newParameters) {
 	doStartupOnce();
 	if (hasCudaDevice()) {
-		fillSineWaveCuda(bufferB, baseIdx, fundamentalFreq);
+		fillSineWaveCuda(bufferB, baseIdx, fundamentalFreq, newParameters);
 	} else {
-		fillSineWaveOnCpu(bufferB, baseIdx, fundamentalFreq);
+		fillSineWaveOnCpu(bufferB, baseIdx, fundamentalFreq, newParameters);
 	}
 }
