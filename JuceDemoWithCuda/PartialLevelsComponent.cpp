@@ -1,8 +1,11 @@
 #include "PartialLevelsComponent.h"
 #include "defines.h"
+#include "PluginEditor.h"
 
 
-PartialLevelsComponent::PartialLevelsComponent(float *partialLevels) : partialLevels(partialLevels)
+PartialLevelsComponent::PartialLevelsComponent(JuceDemoPluginAudioProcessorEditor *editor, float *partialLevels)
+	: editor(editor),
+	  partialLevels(partialLevels)
 {
 	setSize(NUM_PARTIALS, 100);
 	for (int p = 0; p < NUM_PARTIALS; ++p) {
@@ -32,6 +35,7 @@ void PartialLevelsComponent::mouseDrag(const MouseEvent &event) {
 	if (0 <= partialIdx && partialIdx < NUM_PARTIALS) {
 		float level = 1.0 - event.getPosition().getY() / (float)getHeight();
 		partialLevels[partialIdx] = level;
+		editor->parametersChanged();
 		repaint();
 	}
 }

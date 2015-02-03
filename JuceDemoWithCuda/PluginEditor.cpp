@@ -16,7 +16,7 @@
 JuceDemoPluginAudioProcessorEditor::JuceDemoPluginAudioProcessorEditor (JuceDemoPluginAudioProcessor& owner)
     : AudioProcessorEditor (owner),
       midiKeyboard (owner.keyboardState, MidiKeyboardComponent::horizontalKeyboard),
-	  partialLevelsComponent(parameterStates.partialLevels)
+	  partialLevelsComponent(this, parameterStates.partialLevels)
 {
 	addAndMakeVisible(partialLevelsComponent);
 
@@ -92,4 +92,8 @@ void JuceDemoPluginAudioProcessorEditor::sliderValueChanged (Slider* slider)
         getProcessor().setParameterNotifyingHost (JuceDemoPluginAudioProcessor::delayParam,
                                                   (float) delaySlider.getValue());
     }*/
+}
+
+void JuceDemoPluginAudioProcessorEditor::parametersChanged() {
+	kernel::parameterStatesChanged(&parameterStates);
 }

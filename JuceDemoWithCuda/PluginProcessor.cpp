@@ -135,7 +135,7 @@ public:
 			this->needFillBuffer = false;
 
 			//fill the buffer
-			fillSineWaveVoice(bufferB, baseIdx, fundamentalFreq);
+			evaluateSynthVoiceBlock(bufferB, baseIdx, fundamentalFreq);
 			baseIdx += BUFFER_BLOCK_SIZE;
 		}
 	}

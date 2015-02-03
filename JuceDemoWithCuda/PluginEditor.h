@@ -34,6 +34,9 @@ public:
     void resized() override;
     void sliderValueChanged (Slider*) override;
 
+	// Called by other UI components (or self) when the parameters have been manually changed
+	void parametersChanged();
+
 private:
 	ParameterStates parameterStates;
     MidiKeyboardComponent midiKeyboard;
