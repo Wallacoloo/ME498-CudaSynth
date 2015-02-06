@@ -53,7 +53,7 @@ private:
 //but it looks like it's getting empty-defined for some reason, so I copied the macro and inserted it inline:
 //START_JUCE_APPLICATION(StandalonePlugin)
 static juce::JUCEApplicationBase* juce_CreateApplication() { return new StandalonePlugin(); } 
-int main() {
+int main(int argc, char **argv) {
 	juce::JUCEApplicationBase::createInstance = &juce_CreateApplication;
 	return juce::JUCEApplicationBase::main(JUCE_MAIN_FUNCTION_ARGS);
 }

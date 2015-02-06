@@ -30,7 +30,6 @@ void PartialLevelsComponent::paint(Graphics &g)
 
 
 void PartialLevelsComponent::mouseDrag(const MouseEvent &event) {
-	printf("MouseDrag: %i, %i, h: %i\n", event.getPosition().getX(), event.getPosition().getY(), getHeight());
 	int partialIdx = event.getPosition().getX();
 	if (0 <= partialIdx && partialIdx < NUM_PARTIALS) {
 		float level = 1.0 - event.getPosition().getY() / (float)getHeight();

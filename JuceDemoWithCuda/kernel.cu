@@ -213,7 +213,7 @@ namespace kernel {
 		myState->phase = PhaseT(0, 1);
 		// compute e^iw0*deltaT.
 		// = cos(w0*deltaT) + i*sin(w0*deltaT)
-		myState->phasePrime = PhaseT(cosf(angleDelta), sinf(angleDelta)); //exp(i*angleDelta);
+		myState->phasePrime = PhaseT(cosf(angleDelta), sinf(angleDelta));
 		myState->phaseDoublePrime = PhaseT(1, 0);
 		for (int sampleIdx = 0; sampleIdx < BUFFER_BLOCK_SIZE; ++sampleIdx) {
 			float outputL, outputR;
