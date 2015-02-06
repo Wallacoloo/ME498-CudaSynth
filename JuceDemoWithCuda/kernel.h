@@ -15,7 +15,7 @@ namespace kernel {
 	};
 
 	// Call to evaluate the next N samples of a synthesizer voice into bufferB.
-	void evaluateSynthVoiceBlock(float *bufferB, unsigned baseIdx, float fundamentalFreq);
+	void evaluateSynthVoiceBlock(float *bufferB, unsigned voiceNum, unsigned baseIdx, float fundamentalFreq);
 
 	// Call whenever the user edits one of the synth parameters
 	void parameterStatesChanged(const ParameterStates *newParameters);

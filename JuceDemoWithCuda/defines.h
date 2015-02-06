@@ -1,8 +1,11 @@
-//number of audio channels to use (2=stereo)
-//This macro serves to avoid placing magic numbers in our code - it is assumed this will always be 2.
+// number of audio channels to use (2=stereo)
+// This macro serves to avoid placing magic numbers in our code - it is assumed this will always be 2.
 #define NUM_CH 2
-//Number of partials to include in the sound.
+// Number of partials to include in the sound.
 #define NUM_PARTIALS 128
+
+// The maximum number of notes that can be played simultaneously.
+#define MAX_SIMULTANEOUS_SYNTH_NOTES 4
 
 //number of samples to buffer at a time.
 //larger numbers means fewer transfefs between CPU / GPU,

@@ -31,7 +31,9 @@ JuceDemoPluginAudioProcessorEditor::JuceDemoPluginAudioProcessorEditor (JuceDemo
     setSize (owner.lastUIWidth,
              owner.lastUIHeight);
 
-    startTimer (50);
+	parametersChanged();
+
+    //startTimer (50);
 }
 
 JuceDemoPluginAudioProcessorEditor::~JuceDemoPluginAudioProcessorEditor()

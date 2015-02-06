@@ -135,7 +135,7 @@ public:
 			this->needFillBuffer = false;
 
 			//fill the buffer
-			evaluateSynthVoiceBlock(bufferB, baseIdx, fundamentalFreq);
+			evaluateSynthVoiceBlock(bufferB, 0, baseIdx, fundamentalFreq);
 			baseIdx += BUFFER_BLOCK_SIZE;
 		}
 	}
@@ -164,7 +164,7 @@ JuceDemoPluginAudioProcessor::JuceDemoPluginAudioProcessor()
     // Initialise the synth...
 	// At runtime, each note gets assigned to a voice,
 	// so we must create N voices to achieve a polyphony of N.
-    for (int i = 4; --i >= 0;)
+	for (int i = MAX_SIMULTANEOUS_SYNTH_NOTES; --i >= 0;)
 		synth.addVoice(new AdditiveSynthVoice());
 	synth.addSound(new AdditiveSynthSound());
 }
