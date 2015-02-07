@@ -15,7 +15,18 @@ namespace kernel {
 		// once note is released, time it takes for signal to decay to 0.
 		float r;
 	public:
-		
+		inline void setAttack(float attack) {
+			this->a = attack;
+		}
+		inline void setDecay(float decay) {
+			this->d = decay;
+		}
+		inline void setSustain(float sustain) {
+			this->s = sustain;
+		}
+		inline void setRelease(float release) {
+			this->r = release;
+		}
 	};
 
 	// Struct to hold ALL parameter states at a single instant in time.

@@ -5,7 +5,8 @@
 JuceDemoPluginAudioProcessorEditor::JuceDemoPluginAudioProcessorEditor (JuceDemoPluginAudioProcessor& owner)
     : AudioProcessorEditor (owner),
       midiKeyboard (owner.keyboardState, MidiKeyboardComponent::horizontalKeyboard),
-	  partialLevelsComponent(this, parameterStates.partialLevels)
+	  partialLevelsComponent(this, parameterStates.partialLevels),
+	  volumeADSR(this, &parameterStates.volumeEnvelope)
 {
 	addAndMakeVisible(partialLevelsComponent);
 

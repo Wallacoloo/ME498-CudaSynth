@@ -21,9 +21,7 @@
 //==============================================================================
 /** This is the editor component that our filter will display.
 */
-class JuceDemoPluginAudioProcessorEditor  : public AudioProcessorEditor,
-                                            public SliderListener,
-                                            public Timer
+class JuceDemoPluginAudioProcessorEditor  : public AudioProcessorEditor
 {
 public:
     JuceDemoPluginAudioProcessorEditor (JuceDemoPluginAudioProcessor&);
