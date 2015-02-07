@@ -2,6 +2,8 @@
 #include "defines.h"
 #include "PluginEditor.h"
 
+#include <algorithm>
+
 
 PartialLevelsComponent::PartialLevelsComponent(JuceDemoPluginAudioProcessorEditor *editor, float *partialLevels)
 	: editor(editor),
@@ -32,7 +34,9 @@ void PartialLevelsComponent::paint(Graphics &g)
 void PartialLevelsComponent::mouseDrag(const MouseEvent &event) {
 	int partialIdx = event.getPosition().getX();
 	if (0 <= partialIdx && partialIdx < NUM_PARTIALS) {
-		float level = 1.0 - event.getPosition().getY() / (float)getHeight();
+		float level = 1.0f - event.getPosition().getY() / (float)getHeight();
+		// clamp the level to between 0 and 1.
+		level = std::max(0.0f, std::min(1.0f, level));
 		partialLevels[partialIdx] = level;
 		editor->parametersChanged();
 		repaint();
