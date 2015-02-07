@@ -14,6 +14,7 @@
 #include "../JuceLibraryCode/JuceHeader.h"
 #include "PluginProcessor.h"
 #include "PartialLevelsComponent.h"
+#include "ADSRComponent.h"
 #include "kernel.h"
 
 
@@ -41,6 +42,8 @@ private:
 	ParameterStates parameterStates;
     MidiKeyboardComponent midiKeyboard;
 	PartialLevelsComponent partialLevelsComponent;
+	//Slider attackSlider;
+	ADSRComponent volumeADSR;
     ScopedPointer<ResizableCornerComponent> resizer;
     ComponentBoundsConstrainer resizeLimits;
 

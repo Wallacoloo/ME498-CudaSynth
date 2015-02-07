@@ -17,8 +17,16 @@ JuceDemoPluginAudioProcessorEditor::JuceDemoPluginAudioProcessorEditor (JuceDemo
     : AudioProcessorEditor (owner),
       midiKeyboard (owner.keyboardState, MidiKeyboardComponent::horizontalKeyboard),
 	  partialLevelsComponent(this, parameterStates.partialLevels)
+	  //attackSlider("Attack")
 {
 	addAndMakeVisible(partialLevelsComponent);
+
+	/*addAndMakeVisible(attackSlider);
+	attackSlider.setSliderStyle(Slider::Rotary);
+	attackSlider.addListener(this);
+	attackSlider.setRange(0.0, 1.0, 0.01);*/
+
+	addAndMakeVisible(volumeADSR);
 
     // add the midi keyboard component..
     addAndMakeVisible (midiKeyboard);
@@ -50,12 +58,12 @@ void JuceDemoPluginAudioProcessorEditor::paint (Graphics& g)
 
 void JuceDemoPluginAudioProcessorEditor::resized()
 {
-    /*infoLabel.setBounds (10, 4, 400, 25);
-    gainSlider.setBounds (20, 60, 150, 40);
-    delaySlider.setBounds (200, 60, 150, 40);*/
 
     const int keyboardHeight = 70;
     midiKeyboard.setBounds (4, getHeight() - keyboardHeight - 4, getWidth() - 8, keyboardHeight);
+
+	volumeADSR.setBounds(144, 68, 192, 100);
+	//attackSlider.setBounds(256, 60, 150, 40);
 
     resizer->setBounds (getWidth() - 16, getHeight() - 16, 16, 16);
 
