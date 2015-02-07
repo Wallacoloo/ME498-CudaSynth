@@ -30,10 +30,8 @@ public:
     ~JuceDemoPluginAudioProcessorEditor();
 
     //==============================================================================
-    void timerCallback() override;
     void paint (Graphics&) override;
     void resized() override;
-    void sliderValueChanged (Slider*) override;
 
 	// Called by other UI components (or self) when the parameters have been manually changed
 	void parametersChanged();
@@ -42,7 +40,6 @@ private:
 	ParameterStates parameterStates;
     MidiKeyboardComponent midiKeyboard;
 	PartialLevelsComponent partialLevelsComponent;
-	//Slider attackSlider;
 	ADSRComponent volumeADSR;
     ScopedPointer<ResizableCornerComponent> resizer;
     ComponentBoundsConstrainer resizeLimits;
