@@ -44,7 +44,17 @@ namespace kernel {
 		}
 	};
 
+	// Use complex float pairs to represent the phase functions
 	typedef ComplexT<float> PhaseT;
+
+	// Efficient way to compute sequential ADSR values
+	class ADSRState {
+		ADSR adsr;
+	public:
+		__device__ __host__ float next() {
+			return 1.0;
+		}
+	};
 
 	// Contains info about the parameter states at ANY sample in the block
 	struct FullBlockParameterInfo {
@@ -66,6 +76,11 @@ namespace kernel {
 		PhaseT phase;
 		PhaseT phasePrime;
 		PhaseT phaseDoublePrime;
+		ADSRState volumeEnvelope;
+		PartialState() {}
+		PartialState(struct SynthState *d_synthState, unsigned voiceNum, unsigned partialIdx)
+		  : phase(1, 0) {
+		}
 	};
 
 	struct SynthVoiceState {
@@ -208,22 +223,24 @@ namespace kernel {
 
 	// compute the output for ONE sine wave over the current block
 	__device__ __host__ void computePartialOutput(SynthState *synthState, unsigned voiceNum, unsigned baseIdx, unsigned partialIdx, float fundamentalFreq) {
+		SynthVoiceState *voiceState = &synthState->voiceStates[voiceNum];
 		float angleDelta = fundamentalFreq * INV_SAMPLE_RATE * (partialIdx + 1);
-		PartialState* myState = &synthState->voiceStates[voiceNum].partialStates[partialIdx];
-		myState->phase = PhaseT(0, 1);
+		PartialState* myState = &voiceState->partialStates[partialIdx];
+		// myState->phase = PhaseT(1, 0);
 		// compute e^iw0*deltaT.
 		// = cos(w0*deltaT) + i*sin(w0*deltaT)
 		myState->phasePrime = PhaseT(cosf(angleDelta), sinf(angleDelta));
 		myState->phaseDoublePrime = PhaseT(1, 0);
 		for (int sampleIdx = 0; sampleIdx < BUFFER_BLOCK_SIZE; ++sampleIdx) {
 			float outputL, outputR;
-			float sinusoid = myState->phase.real(); //sinf((baseIdx + sampleIdx) * angleDelta);
+			float sinusoid = myState->phase.imag(); // Extract the sinusoidal portion of the wave.
 			myState->phasePrime *= myState->phaseDoublePrime;
 			myState->phase *= myState->phasePrime;
-			float amplitude = (1.0 / NUM_PARTIALS) * synthState->voiceStates[voiceNum].parameterInfo.start.partialLevels[partialIdx];
+			float amplitude = (1.0 / NUM_PARTIALS) * voiceState->parameterInfo.start.partialLevels[partialIdx];
+			amplitude *= myState->volumeEnvelope.next();
 			outputL = outputR = amplitude*sinusoid;
 			reduceOutputs(synthState, partialIdx, baseIdx + sampleIdx, outputL, outputR);
-			updateVoiceParametersIfNeeded(&synthState->voiceStates[voiceNum], voiceNum, partialIdx);
+			updateVoiceParametersIfNeeded(voiceState, voiceNum, partialIdx);
 		}
 	}
 
@@ -267,9 +284,24 @@ namespace kernel {
 		}
 	}
 
-	static void copyParameterStates(const ParameterStates *newParameters, ParameterStates *dest) {
+	static void memcpyHostToSynthState(void *dest, const void *src, std::size_t numBytes) {
 		// if running on device, copy params to GPU via cudaMemcpy, else normal memcpy on cpu.
 		if (hasCudaDevice()) {
+			// cudaMemcpy is synchronous, so concurrency is dealt with automatically
+			checkCudaError(cudaMemcpy(dest, src, numBytes, cudaMemcpyHostToDevice));
+		}
+		else {
+			// else, copy them using normal memcpy
+			// Must first obtain a lock to the synth data.
+			std::unique_lock<std::mutex> stateLock(synthStateMutex);
+			memcpy(dest, src, numBytes);
+		}
+	}
+
+	static void copyParameterStates(const ParameterStates *newParameters, ParameterStates *dest) {
+		memcpyHostToSynthState(dest, newParameters, sizeof(ParameterStates));
+		// if running on device, copy params to GPU via cudaMemcpy, else normal memcpy on cpu.
+		/*if (hasCudaDevice()) {
 			// cudaMemcpy is synchronous, so concurrency is dealt with automatically
 			checkCudaError(cudaMemcpy(dest, newParameters, sizeof(ParameterStates), cudaMemcpyHostToDevice));
 		} else {
@@ -278,7 +310,7 @@ namespace kernel {
 			// TODO: Should only lock once inside the larger loop
 			std::unique_lock<std::mutex> stateLock(synthStateMutex);
 			memcpy(dest, newParameters, sizeof(ParameterStates));
-		}
+		}*/
 	}
 
 	void parameterStatesChanged(const ParameterStates *newParameters) {
@@ -293,6 +325,17 @@ namespace kernel {
 			copyParameterStates(newParameters, &d_synthState->voiceStates[i].parameterInfo.end);
 		}
 		hasInitStartParams = true;
+	}
+
+	void onNoteStart(unsigned voiceNum) {
+		doStartupOnce();
+		// need to go through and properly initialize all the note's state information:
+		//   partial phases, ADSR states, etc.
+		PartialState partialStates[NUM_PARTIALS];
+		for (int i = 0; i < NUM_PARTIALS; ++i) {
+			partialStates[i] = PartialState(d_synthState, voiceNum, i);
+		}
+		memcpyHostToSynthState(&d_synthState->voiceStates[voiceNum].partialStates, partialStates, sizeof(PartialState)*NUM_PARTIALS);
 	}
 
 }

@@ -20,3 +20,15 @@
 // # of audio frames per second
 #define SAMPLE_RATE 44100
 #define INV_SAMPLE_RATE (1.f/44100.f)
+
+
+
+// Expose conveniences:
+#ifdef __CUDACC__
+	// allow to declare function prototype as HOST both when compiling in Cuda and plain C++.
+	#define HOST __host__
+	#define DEVICE __device__
+#else
+	#define HOST
+	#define DEVICE
+#endif

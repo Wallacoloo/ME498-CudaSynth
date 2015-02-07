@@ -38,6 +38,8 @@ public:
 /** A simple demo synth voice that just plays a sine wave.. */
 class AdditiveSynthVoice  : public SynthesiserVoice
 {
+	// this acts as an ID to associate this voice with the resources on the GPU side.
+	unsigned myVoiceNumber;
 	//we use a double-buffering strategy to allow bufferDrain to be drained into the audio output
 	//  while bufferFill is being filled in in a different thread.
 	//Once bufferDrain is fully drained, it waits for bufferFill to be filled and then swaps the pointers:
@@ -51,7 +53,8 @@ class AdditiveSynthVoice  : public SynthesiserVoice
 	std::condition_variable needFillBufferCV;
 	std::thread fillThread;
 public:
-	AdditiveSynthVoice() : isAlive(true), fundamentalFreq(0), sampleIdx(0),
+	AdditiveSynthVoice(unsigned voiceNum) : myVoiceNumber(voiceNum),
+		isAlive(true), fundamentalFreq(0), sampleIdx(0),
 		needFillBuffer(false),
 		fillThread([](AdditiveSynthVoice *v) { v->fillLoop(); }, this) {
 		memset(bufferA, 0, BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float));
@@ -78,7 +81,7 @@ public:
 		double cyclesPerSecond = MidiMessage::getMidiNoteInHertz(midiNoteNumber);
 		assert(getSampleRate() == SAMPLE_RATE);
 		fundamentalFreq = cyclesPerSecond * 2*PI;
-
+		kernel::onNoteStart(myVoiceNumber);
     }
 
     void stopNote (float /*velocity*/, bool allowTailOff) override
@@ -135,7 +138,7 @@ public:
 			this->needFillBuffer = false;
 
 			//fill the buffer
-			evaluateSynthVoiceBlock(bufferB, 0, baseIdx, fundamentalFreq);
+			evaluateSynthVoiceBlock(bufferB, myVoiceNumber, baseIdx, fundamentalFreq);
 			baseIdx += BUFFER_BLOCK_SIZE;
 		}
 	}
@@ -165,7 +168,7 @@ JuceDemoPluginAudioProcessor::JuceDemoPluginAudioProcessor()
 	// At runtime, each note gets assigned to a voice,
 	// so we must create N voices to achieve a polyphony of N.
 	for (int i = MAX_SIMULTANEOUS_SYNTH_NOTES; --i >= 0;)
-		synth.addVoice(new AdditiveSynthVoice());
+		synth.addVoice(new AdditiveSynthVoice(i));
 	synth.addSound(new AdditiveSynthSound());
 }
 
