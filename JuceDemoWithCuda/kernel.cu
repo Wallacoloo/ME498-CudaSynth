@@ -47,6 +47,34 @@ namespace kernel {
 	// Use complex float pairs to represent the phase functions
 	typedef ComplexT<float> PhaseT;
 
+	// Efficient way to compute successive sine values
+	class Sinuisoidal {
+		// The partial has a phase function, phase(t).
+		// For constant frequency, phase(t) = w*t.
+		// We need varied frequency over time whenever the frequency changes.
+		// Thus, dp/dt = w0 + (w1-w0)/T*t, where T is the time over which the frequency should be altered.
+		// Write as dp/dt = w0 + kt
+		// and so each sample, the phase accumulator should be multiplied by e^i(w0+kt)
+		// This *can* be done efficiently.
+		// First, evaluate e^iw0 at the start of the block, store as dP/dt
+		//   Also evaluate e^ik(1) as d^2P/dt^2. Each sample, multiply dP/dt = dP/dt * d^2P/dt^2
+		PhaseT phase;
+		PhaseT phasePrime;
+		PhaseT phaseDoublePrime;
+	public:
+		Sinuisoidal() : phase(1, 0) {}
+		void atBlockStart(int partialIdx, float fundamentalFreq) {
+			float angleDelta = fundamentalFreq * INV_SAMPLE_RATE * (partialIdx + 1);
+			phasePrime = PhaseT(cosf(angleDelta), sinf(angleDelta));
+			phaseDoublePrime = PhaseT(1, 0);
+		}
+		PhaseT next() {
+			phasePrime *= phaseDoublePrime;
+			phase *= phasePrime;
+			return phase;
+		}
+	};
+
 	// Efficient way to compute sequential ADSR values
 	class ADSRState {
 		enum Mode {
@@ -145,23 +173,11 @@ namespace kernel {
 
 	// Contains extra state information relevant to each individual partial
 	struct PartialState {
-		// The partial has a phase function, phase(t).
-		// For constant frequency, phase(t) = w*t.
-		// We need varied frequency over time whenever the frequency changes.
-		// Thus, dp/dt = w0 + (w1-w0)/T*t, where T is the time over which the frequency should be altered.
-		// Write as dp/dt = w0 + kt
-		// and so each sample, the phase accumulator should be multiplied by e^i(w0+kt)
-		// This *can* be done efficiently.
-		// First, evaluate e^iw0 at the start of the block, store as dP/dt
-		//   Also evaluate e^ik(1) as d^2P/dt^2. Each sample, multiply dP/dt = dP/dt * d^2P/dt^2
-		PhaseT phase;
-		PhaseT phasePrime;
-		PhaseT phaseDoublePrime;
+		Sinuisoidal sinusoid;
 		ADSRState volumeEnvelope;
 		PartialState() {}
-		PartialState(struct SynthState *d_synthState, unsigned voiceNum, unsigned partialIdx)
-		  : phase(1, 0) {
-		}
+		PartialState(struct SynthState *synthState, unsigned voiceNum, unsigned partialIdx) {}
+		__device__ __host__ void atBlockStart(struct SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq);
 	};
 
 	struct SynthVoiceState {
@@ -174,6 +190,11 @@ namespace kernel {
 		SynthVoiceState voiceStates[MAX_SIMULTANEOUS_SYNTH_NOTES];
 		float sampleBuffer[CIRCULAR_BUFFER_LEN*NUM_CH];
 	};
+
+	void PartialState::atBlockStart(struct SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq) {
+		sinusoid.atBlockStart(partialIdx, fundamentalFreq);
+		volumeEnvelope.atBlockStart(&voiceState->parameterInfo.start.volumeEnvelope, &voiceState->parameterInfo.end.volumeEnvelope, partialIdx);
+	}
 
 	// When summing the outputs at a specific frame for each partial, we use a reduction method.
 	// This reduction method requires a temporary array in shared memory.
@@ -297,6 +318,7 @@ namespace kernel {
 		int numTransfers = (totalBytesToCopy + transferSize - 1) / transferSize;
 		int numTransfersPerThread = (numTransfers + NUM_PARTIALS - 1) / NUM_PARTIALS;*/
 		if (partialIdx == 0) {
+			// TODO: only do this copy if the parameters have changed
 			memcpy(&voiceState->parameterInfo.start, &voiceState->parameterInfo.end, sizeof(ParameterStates));
 		}
 
@@ -305,22 +327,22 @@ namespace kernel {
 	// compute the output for ONE sine wave over the current block
 	__device__ __host__ void computePartialOutput(SynthState *synthState, unsigned voiceNum, unsigned baseIdx, unsigned partialIdx, float fundamentalFreq) {
 		SynthVoiceState *voiceState = &synthState->voiceStates[voiceNum];
-		float angleDelta = fundamentalFreq * INV_SAMPLE_RATE * (partialIdx + 1);
 		PartialState* myState = &voiceState->partialStates[partialIdx];
-		myState->volumeEnvelope.atBlockStart(&voiceState->parameterInfo.start.volumeEnvelope, &voiceState->parameterInfo.end.volumeEnvelope, partialIdx);
+		myState->atBlockStart(voiceState, partialIdx, fundamentalFreq);
+		// myState->volumeEnvelope.atBlockStart(&voiceState->parameterInfo.start.volumeEnvelope, &voiceState->parameterInfo.end.volumeEnvelope, partialIdx);
 		// myState->phase = PhaseT(1, 0);
 		// compute e^iw0*deltaT.
 		// = cos(w0*deltaT) + i*sin(w0*deltaT)
-		myState->phasePrime = PhaseT(cosf(angleDelta), sinf(angleDelta));
-		myState->phaseDoublePrime = PhaseT(1, 0);
+		// float angleDelta = fundamentalFreq * INV_SAMPLE_RATE * (partialIdx + 1);
+		// myState->phasePrime = PhaseT(cosf(angleDelta), sinf(angleDelta));
+		// myState->phaseDoublePrime = PhaseT(1, 0);
 		for (int sampleIdx = 0; sampleIdx < BUFFER_BLOCK_SIZE; ++sampleIdx) {
 			float outputL, outputR;
-			float sinusoid = myState->phase.imag(); // Extract the sinusoidal portion of the wave.
-			myState->phasePrime *= myState->phaseDoublePrime;
-			myState->phase *= myState->phasePrime;
+			float sinusoid = myState->sinusoid.next().imag(); // Extract the sinusoidal portion of the wave.
 			float amplitude = (1.0 / NUM_PARTIALS) * voiceState->parameterInfo.start.partialLevels[partialIdx];
 			amplitude *= myState->volumeEnvelope.next();
 			outputL = outputR = amplitude*sinusoid;
+
 			reduceOutputs(synthState, partialIdx, baseIdx + sampleIdx, outputL, outputR);
 			updateVoiceParametersIfNeeded(voiceState, voiceNum, partialIdx);
 		}
@@ -342,10 +364,6 @@ namespace kernel {
 	}
 
 	__host__ void evaluateSynthVoiceBlockCuda(float *bufferB, unsigned voiceNum, unsigned sampleIdx, float fundamentalFreq) {
-		// update the ending parameter states of this block
-		// if (newParameters) {
-		//	checkCudaError(cudaMemcpy(&d_synthState->parameterInfo.end, newParameters, sizeof(ParameterStates), cudaMemcpyHostToDevice));
-		//}
 		evaluateSynthVoiceBlockKernel << <1, NUM_PARTIALS >> >(d_synthState, voiceNum, sampleIdx, fundamentalFreq);
 
 		checkCudaError(cudaGetLastError()); //check if error in kernel launch
@@ -371,8 +389,7 @@ namespace kernel {
 		if (hasCudaDevice()) {
 			// cudaMemcpy is synchronous, so concurrency is dealt with automatically
 			checkCudaError(cudaMemcpy(dest, src, numBytes, cudaMemcpyHostToDevice));
-		}
-		else {
+		} else {
 			// else, copy them using normal memcpy
 			// Must first obtain a lock to the synth data.
 			std::unique_lock<std::mutex> stateLock(synthStateMutex);
@@ -382,17 +399,6 @@ namespace kernel {
 
 	static void copyParameterStates(const ParameterStates *newParameters, ParameterStates *dest) {
 		memcpyHostToSynthState(dest, newParameters, sizeof(ParameterStates));
-		// if running on device, copy params to GPU via cudaMemcpy, else normal memcpy on cpu.
-		/*if (hasCudaDevice()) {
-			// cudaMemcpy is synchronous, so concurrency is dealt with automatically
-			checkCudaError(cudaMemcpy(dest, newParameters, sizeof(ParameterStates), cudaMemcpyHostToDevice));
-		} else {
-			// else, copy them using normal memcpy
-			// Must first obtain a lock to the synth data.
-			// TODO: Should only lock once inside the larger loop
-			std::unique_lock<std::mutex> stateLock(synthStateMutex);
-			memcpy(dest, newParameters, sizeof(ParameterStates));
-		}*/
 	}
 
 	void parameterStatesChanged(const ParameterStates *newParameters) {
