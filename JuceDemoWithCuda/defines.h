@@ -11,6 +11,7 @@
 //larger numbers means fewer transfefs between CPU / GPU,
 //  but larger latency
 #define BUFFER_BLOCK_SIZE 512
+#define INV_BUFFER_BLOCK_SIZE (1.f / BUFFER_BLOCK_SIZE)
 // The delay effect has to calculate its output N samples AHEAD of the current index.
 // If we want a maximum of 10sec delay (say 5 voices spaced 2 seconds apart), then we need 10*SAMPLE_RATE buffer size.
 // Note: this MUST be a multiple of BUFFER_BLOCK_SIZE

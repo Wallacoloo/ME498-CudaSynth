@@ -57,23 +57,57 @@ namespace kernel {
 		};
 		Mode mode;
 		float value;
+		// attack approach #1 (makes more sense in the context where dv2/dt = infinity)
+		// attackTime(t) = a1 + (a2-a1)*t/deltaT
+		// dv/dt = 1.0/attackTime(t)
+		// dv/dt = 1.0/(a1 + (a2-a1)*t/deltaT)
+		// However, this is difficult to compute efficiently
+
+		// attack approach #2
 		// in attack mode, we increase value by dv/dt, if the attack is constant.
 		// but if attack is changing, then we want to interpolate the dv1/dt and dv2/dt
 		// Thus, we have dv/dt = dv1/dt + (dv2/dt-dv1/dt)*t
 		// Or, each sample, dv/dt += (dv2/dt-dv1/dt)
 		float attackPrime;
 		float attackDoublePrime;
+
+		// decay approach (a bit more difficult, since depends on changing sustain levels too).
+		// calculate dv1/dt and dv2/dt just as in attack approach #2, based on the start decay&sustain and the end decay&sustain.
+		// Then apply same algorithm.
+		float decayPrime;
+		float decayDoublePrime;
+
+		// sustain approach
+		// calculate sustain1 and sustain2.
+		// then sustainLevel = sustain1 + (sustain2-sustain1)*t/deltaT
+		float sustainLevel;
+		float sustainPrime;
+
+		float releasePrime;
+		float releaseDoublePrime;
 	public:
+		// initialized at the start of a note
+		ADSRState() : mode(AttackMode), value(0.f) {}
 		// call at block begin to precompute values.
 		__device__ __host__ void atBlockStart(ADSR *start, ADSR *end, unsigned partialIdx) {
-			value = 1.0;
-			float dv_dtInSecondsAtAttack = 1.0 / start->getAttack();
+			// Calculate attack parameters
+			float dv_dtInSecondsAtAttack = 1.f / max(start->getAttack(), INV_SAMPLE_RATE);
 			attackPrime = INV_SAMPLE_RATE * dv_dtInSecondsAtAttack;
-			float dv_dtInSecondsAtAttack2 = 1.0 / end->getAttack();
-			float dv_dt2_minus_dv_dt1InSeconds = dv_dtInSecondsAtAttack2 - dv_dtInSecondsAtAttack;
-			attackDoublePrime = INV_SAMPLE_RATE * dv_dt2_minus_dv_dt1InSeconds;
+			float dv_dtInSecondsAtAttack2 = 1.f / max(end->getAttack(), INV_SAMPLE_RATE);
+			float dv_dt2_minus_dv_dt1InSecondsAtAttack = dv_dtInSecondsAtAttack2 - dv_dtInSecondsAtAttack;
+			attackDoublePrime = INV_SAMPLE_RATE * dv_dt2_minus_dv_dt1InSecondsAtAttack;
+			// Calculate delay parameters
+			float dv_dtInSecondsAtDecay = (start->getSustain()-1.f) / max(start->getDecay(), INV_SAMPLE_RATE);
+			decayPrime = INV_SAMPLE_RATE * dv_dtInSecondsAtDecay;
+			float dv_dtInSecondsAtDecay2 = (end->getSustain() - 1.f) / max(end->getDecay(), INV_SAMPLE_RATE);
+			float dv_dt2_minus_dv_dt1InSecondsAtDecay = dv_dtInSecondsAtDecay2 - dv_dtInSecondsAtDecay;
+			decayDoublePrime = INV_SAMPLE_RATE * dv_dt2_minus_dv_dt1InSecondsAtDecay;
+			// Calculate sustain parameters
+			sustainLevel = start->getSustain();
+			sustainPrime = INV_BUFFER_BLOCK_SIZE * (end->getSustain() - start->getSustain());
 		}
 		__device__ __host__ float next() {
+			sustainLevel -= sustainPrime;
 			switch (mode) {
 			case AttackMode:
 				attackPrime += attackDoublePrime;
@@ -84,9 +118,17 @@ namespace kernel {
 				}
 				break;
 			case DecayMode:
+				decayPrime += decayDoublePrime;
+				value += decayPrime;
+				if (value <= sustainLevel) {
+					value = sustainLevel;
+					mode = SustainMode;
+				}
 				break;
 			default:
 			case SustainMode:
+				// must update value to the new sustain level computed above
+				value = sustainLevel;
 				break;
 			case ReleaseMode:
 				break;

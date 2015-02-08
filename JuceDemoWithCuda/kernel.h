@@ -15,6 +15,7 @@ namespace kernel {
 		// once note is released, time it takes for signal to decay to 0.
 		float r;
 	public:
+		ADSR(float a = 0.f, float d = 0.f, float s = 0.f, float r = 0.f) : a(a), d(d), s(s), r(r) {}
 		inline void setAttack(float attack) {
 			this->a = attack;
 		}
