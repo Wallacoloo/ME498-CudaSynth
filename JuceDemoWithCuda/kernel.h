@@ -27,6 +27,18 @@ namespace kernel {
 		inline void setRelease(float release) {
 			this->r = release;
 		}
+		inline HOST DEVICE float getAttack() const {
+			return a;
+		}
+		inline HOST DEVICE float getDecay() const {
+			return d;
+		}
+		inline HOST DEVICE float getSustain() const {
+			return s;
+		}
+		inline HOST DEVICE float getRelease() const {
+			return r;
+		}
 	};
 
 	// Struct to hold ALL parameter states at a single instant in time.

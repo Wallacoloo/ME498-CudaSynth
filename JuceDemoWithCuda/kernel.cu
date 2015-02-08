@@ -49,10 +49,49 @@ namespace kernel {
 
 	// Efficient way to compute sequential ADSR values
 	class ADSRState {
-		ADSR adsr;
+		enum Mode {
+			AttackMode,
+			DecayMode,
+			SustainMode,
+			ReleaseMode
+		};
+		Mode mode;
+		float value;
+		// in attack mode, we increase value by dv/dt, if the attack is constant.
+		// but if attack is changing, then we want to interpolate the dv1/dt and dv2/dt
+		// Thus, we have dv/dt = dv1/dt + (dv2/dt-dv1/dt)*t
+		// Or, each sample, dv/dt += (dv2/dt-dv1/dt)
+		float attackPrime;
+		float attackDoublePrime;
 	public:
+		// call at block begin to precompute values.
+		__device__ __host__ void atBlockStart(ADSR *start, ADSR *end, unsigned partialIdx) {
+			value = 1.0;
+			float dv_dtInSecondsAtAttack = 1.0 / start->getAttack();
+			attackPrime = INV_SAMPLE_RATE * dv_dtInSecondsAtAttack;
+			float dv_dtInSecondsAtAttack2 = 1.0 / end->getAttack();
+			float dv_dt2_minus_dv_dt1InSeconds = dv_dtInSecondsAtAttack2 - dv_dtInSecondsAtAttack;
+			attackDoublePrime = INV_SAMPLE_RATE * dv_dt2_minus_dv_dt1InSeconds;
+		}
 		__device__ __host__ float next() {
-			return 1.0;
+			switch (mode) {
+			case AttackMode:
+				attackPrime += attackDoublePrime;
+				value += attackPrime;
+				if (value >= 1.0f) {
+					value = 1.0f;
+					mode = DecayMode;
+				}
+				break;
+			case DecayMode:
+				break;
+			default:
+			case SustainMode:
+				break;
+			case ReleaseMode:
+				break;
+			}
+			return value;
 		}
 	};
 
@@ -226,6 +265,7 @@ namespace kernel {
 		SynthVoiceState *voiceState = &synthState->voiceStates[voiceNum];
 		float angleDelta = fundamentalFreq * INV_SAMPLE_RATE * (partialIdx + 1);
 		PartialState* myState = &voiceState->partialStates[partialIdx];
+		myState->volumeEnvelope.atBlockStart(&voiceState->parameterInfo.start.volumeEnvelope, &voiceState->parameterInfo.end.volumeEnvelope, partialIdx);
 		// myState->phase = PhaseT(1, 0);
 		// compute e^iw0*deltaT.
 		// = cos(w0*deltaT) + i*sin(w0*deltaT)
