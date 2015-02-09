@@ -45,7 +45,10 @@ class AdditiveSynthVoice  : public SynthesiserVoice
 	//Once bufferDrain is fully drained, it waits for bufferFill to be filled and then swaps the pointers:
 	//  bufferDrain* with bufferFill*, which point to either one of the underlying bufferA, bufferB buffers.
 	float bufferA[BUFFER_BLOCK_SIZE*NUM_CH], bufferB[BUFFER_BLOCK_SIZE*NUM_CH];
+	// flag to kill the worker thread (done upon destruction of the Voice @ program shutdown)
 	std::atomic<bool> isAlive;
+	// pass on to the synth kernel that the note is in release mode (ADSR)
+	std::atomic<bool> wasNoteReleased;
 	std::atomic<float> fundamentalFreq;
 	unsigned int sampleIdx;
 	std::mutex bufferBMutex;
@@ -54,7 +57,7 @@ class AdditiveSynthVoice  : public SynthesiserVoice
 	std::thread fillThread;
 public:
 	AdditiveSynthVoice(unsigned voiceNum) : myVoiceNumber(voiceNum),
-		isAlive(true), fundamentalFreq(0), sampleIdx(0),
+		isAlive(true), wasNoteReleased(false), fundamentalFreq(0), sampleIdx(0),
 		needFillBuffer(false),
 		fillThread([](AdditiveSynthVoice *v) { v->fillLoop(); }, this) {
 		memset(bufferA, 0, BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float));
@@ -76,7 +79,12 @@ public:
                     SynthesiserSound* /*sound*/,
                     int /*currentPitchWheelPosition*/) override
     {
-		sampleIdx = 0;
+		std::unique_lock<std::mutex> lock(bufferBMutex);
+		memset(bufferA, 0, sizeof(bufferB));
+		memset(bufferB, 0, sizeof(bufferB));
+
+		sampleIdx = BUFFER_BLOCK_SIZE; // trigger a re-render of the current block
+		wasNoteReleased = false;
 
 		double cyclesPerSecond = MidiMessage::getMidiNoteInHertz(midiNoteNumber);
 		assert(getSampleRate() == SAMPLE_RATE);
@@ -86,7 +94,12 @@ public:
 
     void stopNote (float /*velocity*/, bool allowTailOff) override
     {
-		clearCurrentNote();
+		printf("stopNote() called on voice %i. allowTailOff? %i\n", myVoiceNumber, allowTailOff);
+		wasNoteReleased = true;
+		if (!allowTailOff) {
+			// if we aren't allowed to do the release phase, end the note immediately.
+			clearCurrentNote();
+		}
     }
 
     void pitchWheelMoved (int /*newValue*/) override
@@ -108,9 +121,15 @@ public:
 			if (sampleIdx == BUFFER_BLOCK_SIZE) {
 				sampleIdx = 0;
 				waitAndSwapBuffers();
+			} else if (sampleIdx == BUFFER_BLOCK_SIZE - 1 && std::isnan(bufferA[(BUFFER_BLOCK_SIZE - 1) * NUM_CH])) {
+				// NaN at last buffer point signals end of note.
+				printf("ending note from within renderNextBlock callback\n");
+				bufferA[(BUFFER_BLOCK_SIZE - 1) * NUM_CH] = 0;
+				clearCurrentNote();
+				return;
 			}
 			for (int ch = outputBuffer.getNumChannels(); --ch >= 0;) {
-				outputBuffer.addSample(ch, localIdx, bufferA[sampleIdx * 2 + ch]);
+				outputBuffer.addSample(ch, localIdx, bufferA[sampleIdx * NUM_CH + ch]);
 			}
 			++sampleIdx;
 		}
@@ -120,6 +139,7 @@ public:
 		std::unique_lock<std::mutex> lock(bufferBMutex);
 		//copy buffer B into buffer A:
 		memcpy(bufferA, bufferB, BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float));
+
 		//release buffer B lock and notify the filler thread.
 		needFillBuffer = true;
 		needFillBufferCV.notify_one();
@@ -128,17 +148,19 @@ public:
 	void fillLoop() {
 		unsigned baseIdx = 0;
 		while (1) {
-			//get access to buffer B
+			// get access to buffer B
 			std::unique_lock<std::mutex> lock(bufferBMutex);
-			//wait until we are asked to fill the buffer, and then clear the flag
+			// wait until we are asked to fill the buffer, and then clear the flag
 			needFillBufferCV.wait(lock, [this]() { return this->needFillBuffer || !this->isAlive; });
 			if (!isAlive) {
 				return;
 			}
 			this->needFillBuffer = false;
 
-			//fill the buffer
-			evaluateSynthVoiceBlock(bufferB, myVoiceNumber, baseIdx, fundamentalFreq);
+			// fill the buffer
+			//printf("Was note released?: %i\n", wasNoteReleased.load());
+			evaluateSynthVoiceBlock(bufferB, myVoiceNumber, baseIdx, fundamentalFreq, wasNoteReleased);
+			//printf("last value in buffer: %f\n", bufferB[(BUFFER_BLOCK_SIZE - 1) * NUM_CH]);
 			baseIdx += BUFFER_BLOCK_SIZE;
 		}
 	}

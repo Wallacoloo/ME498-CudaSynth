@@ -63,12 +63,12 @@ namespace kernel {
 		PhaseT phaseDoublePrime;
 	public:
 		Sinuisoidal() : phase(1, 0) {}
-		void atBlockStart(int partialIdx, float fundamentalFreq) {
+		__device__ __host__ void atBlockStart(int partialIdx, float fundamentalFreq) {
 			float angleDelta = fundamentalFreq * INV_SAMPLE_RATE * (partialIdx + 1);
 			phasePrime = PhaseT(cosf(angleDelta), sinf(angleDelta));
 			phaseDoublePrime = PhaseT(1, 0);
 		}
-		PhaseT next() {
+		__device__ __host__ PhaseT next() {
 			phasePrime *= phaseDoublePrime;
 			phase *= phasePrime;
 			return phase;
@@ -183,12 +183,12 @@ namespace kernel {
 	struct SynthVoiceState {
 		FullBlockParameterInfo parameterInfo;
 		PartialState partialStates[NUM_PARTIALS];
+		float sampleBuffer[CIRCULAR_BUFFER_LEN*NUM_CH];
 	};
 
 	// Packages all the state-related information for the synth in one class to store persistently on the device
 	struct SynthState {
 		SynthVoiceState voiceStates[MAX_SIMULTANEOUS_SYNTH_NOTES];
-		float sampleBuffer[CIRCULAR_BUFFER_LEN*NUM_CH];
 	};
 
 	void PartialState::atBlockStart(struct SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq) {
@@ -252,10 +252,11 @@ namespace kernel {
 		if (hasCudaDevice()) {
 			// allocate sample buffer on device
 			checkCudaError(cudaMalloc(&d_synthState, sizeof(SynthState)));
+			checkCudaError(cudaMemset(d_synthState, 0, sizeof(SynthState)));
 		} else {
 			// allocate sample buffer on cpu
 			d_synthState = (SynthState*)malloc(sizeof(SynthState));
-			printf("Allocated synthState %p\n", d_synthState);
+			memset(d_synthState, 0, sizeof(SynthState));
 		}
 	}
 
@@ -268,7 +269,7 @@ namespace kernel {
 	}
 
 	// called for each partial to sum their outputs together.
-	__device__ __host__ void reduceOutputs(SynthState *synthState, unsigned partialIdx, int sampleIdx, float outputL, float outputR) {
+	__device__ __host__ void reduceOutputs(SynthVoiceState *voiceState, unsigned partialIdx, int sampleIdx, float outputL, float outputR) {
 		//algorithm: given 8 outputs, [0, 1, 2, 3, 4, 5, 6, 7]
 		//first iteration: 4 active threads. 
 		//  Thread 0 adds i0 to i(0+4). Thread 1 adds i1 to i(1+4). Thread 2 adds i2 to i(2+4). Thread 3 adds i3 to i(3+4)
@@ -293,19 +294,19 @@ namespace kernel {
 			numActiveThreads /= 2;
 		}
 		if (partialIdx == 0) {
-			synthState->sampleBuffer[bufferIdx + 0] = partialReductionOutputs[0];
-			synthState->sampleBuffer[bufferIdx + 1] = partialReductionOutputs[1];
+			voiceState->sampleBuffer[bufferIdx + 0] = partialReductionOutputs[0];
+			voiceState->sampleBuffer[bufferIdx + 1] = partialReductionOutputs[1];
 		}
 #else
 		//host code
 		//Since everything's computed iteratively, we can just add our outputs directly to the buffer.
 		//First write to this sample must zero-initialize the buffer (not required in the GPU code).
 		if (partialIdx == 0) {
-			synthState->sampleBuffer[bufferIdx + 0] = 0;
-			synthState->sampleBuffer[bufferIdx + 1] = 0;
+			voiceState->sampleBuffer[bufferIdx + 0] = 0;
+			voiceState->sampleBuffer[bufferIdx + 1] = 0;
 		}
-		synthState->sampleBuffer[bufferIdx + 0] += outputL;
-		synthState->sampleBuffer[bufferIdx + 1] += outputR;
+		voiceState->sampleBuffer[bufferIdx + 0] += outputL;
+		voiceState->sampleBuffer[bufferIdx + 1] += outputR;
 #endif
 	}
 
@@ -325,17 +326,10 @@ namespace kernel {
 	}
 
 	// compute the output for ONE sine wave over the current block
-	__device__ __host__ void computePartialOutput(SynthState *synthState, unsigned voiceNum, unsigned baseIdx, unsigned partialIdx, float fundamentalFreq) {
+	__device__ __host__ void computePartialOutput(SynthState *synthState, unsigned voiceNum, unsigned baseIdx, unsigned partialIdx, float fundamentalFreq, bool released) {
 		SynthVoiceState *voiceState = &synthState->voiceStates[voiceNum];
 		PartialState* myState = &voiceState->partialStates[partialIdx];
 		myState->atBlockStart(voiceState, partialIdx, fundamentalFreq);
-		// myState->volumeEnvelope.atBlockStart(&voiceState->parameterInfo.start.volumeEnvelope, &voiceState->parameterInfo.end.volumeEnvelope, partialIdx);
-		// myState->phase = PhaseT(1, 0);
-		// compute e^iw0*deltaT.
-		// = cos(w0*deltaT) + i*sin(w0*deltaT)
-		// float angleDelta = fundamentalFreq * INV_SAMPLE_RATE * (partialIdx + 1);
-		// myState->phasePrime = PhaseT(cosf(angleDelta), sinf(angleDelta));
-		// myState->phaseDoublePrime = PhaseT(1, 0);
 		for (int sampleIdx = 0; sampleIdx < BUFFER_BLOCK_SIZE; ++sampleIdx) {
 			float outputL, outputR;
 			float sinusoid = myState->sinusoid.next().imag(); // Extract the sinusoidal portion of the wave.
@@ -343,28 +337,34 @@ namespace kernel {
 			amplitude *= myState->volumeEnvelope.next();
 			outputL = outputR = amplitude*sinusoid;
 
-			reduceOutputs(synthState, partialIdx, baseIdx + sampleIdx, outputL, outputR);
+			reduceOutputs(voiceState, partialIdx, baseIdx + sampleIdx, outputL, outputR);
 			updateVoiceParametersIfNeeded(voiceState, voiceNum, partialIdx);
+		}
+		if (partialIdx == 0 && released) {
+			// signal no more samples
+			unsigned bufferStartIdx = NUM_CH * (baseIdx % CIRCULAR_BUFFER_LEN);
+			voiceState->sampleBuffer[bufferStartIdx+(BUFFER_BLOCK_SIZE-1)*NUM_CH] = NAN;
+			return;
 		}
 	}
 
-	__global__ void evaluateSynthVoiceBlockKernel(SynthState *synthState, unsigned voiceNum, unsigned baseIdx, float fundamentalFreq) {
+	__global__ void evaluateSynthVoiceBlockKernel(SynthState *synthState, unsigned voiceNum, unsigned baseIdx, float fundamentalFreq, bool released) {
 		int partialNum = threadIdx.x;
-		computePartialOutput(synthState, voiceNum, baseIdx, partialNum, fundamentalFreq);
+		computePartialOutput(synthState, voiceNum, baseIdx, partialNum, fundamentalFreq, released);
 	}
 
-	__host__ void evaluateSynthVoiceBlockOnCpu(float *bufferB, unsigned voiceNum, unsigned sampleIdx, float fundamentalFreq) {
+	__host__ void evaluateSynthVoiceBlockOnCpu(float *bufferB, unsigned voiceNum, unsigned sampleIdx, float fundamentalFreq, bool released) {
 		// need to obtain a lock on the synth state
 		std::unique_lock<std::mutex> stateLock(synthStateMutex);
 		for (int partialIdx = 0; partialIdx < NUM_PARTIALS; ++partialIdx) {
-			computePartialOutput(d_synthState, voiceNum, sampleIdx, partialIdx, fundamentalFreq);
+			computePartialOutput(d_synthState, voiceNum, sampleIdx, partialIdx, fundamentalFreq, released);
 		}
 		unsigned bufferStartIdx = NUM_CH * (sampleIdx % CIRCULAR_BUFFER_LEN);
-		memcpy(bufferB, &d_synthState->sampleBuffer[bufferStartIdx], BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float));
+		memcpy(bufferB, &d_synthState->voiceStates[voiceNum].sampleBuffer[bufferStartIdx], BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float));
 	}
 
-	__host__ void evaluateSynthVoiceBlockCuda(float *bufferB, unsigned voiceNum, unsigned sampleIdx, float fundamentalFreq) {
-		evaluateSynthVoiceBlockKernel << <1, NUM_PARTIALS >> >(d_synthState, voiceNum, sampleIdx, fundamentalFreq);
+	__host__ void evaluateSynthVoiceBlockCuda(float *bufferB, unsigned voiceNum, unsigned sampleIdx, float fundamentalFreq, bool released) {
+		evaluateSynthVoiceBlockKernel << <1, NUM_PARTIALS >> >(d_synthState, voiceNum, sampleIdx, fundamentalFreq, released);
 
 		checkCudaError(cudaGetLastError()); //check if error in kernel launch
 		checkCudaError(cudaDeviceSynchronize()); //check for error INSIDE the kernel
@@ -372,15 +372,15 @@ namespace kernel {
 		//copy memory into the cpu buffer
 		//Note: this will wait for the kernel to complete first.
 		unsigned bufferStartIdx = NUM_CH * (sampleIdx % CIRCULAR_BUFFER_LEN);
-		checkCudaError(cudaMemcpy(bufferB, &d_synthState->sampleBuffer[bufferStartIdx], BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float), cudaMemcpyDeviceToHost));
+		checkCudaError(cudaMemcpy(bufferB, &d_synthState->voiceStates[voiceNum].sampleBuffer[bufferStartIdx], BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float), cudaMemcpyDeviceToHost));
 	}
 
-	void evaluateSynthVoiceBlock(float *bufferB, unsigned voiceNum, unsigned baseIdx, float fundamentalFreq) {
+	void evaluateSynthVoiceBlock(float *bufferB, unsigned voiceNum, unsigned baseIdx, float fundamentalFreq, bool released) {
 		doStartupOnce();
 		if (hasCudaDevice()) {
-			evaluateSynthVoiceBlockCuda(bufferB, voiceNum, baseIdx, fundamentalFreq);
+			evaluateSynthVoiceBlockCuda(bufferB, voiceNum, baseIdx, fundamentalFreq, released);
 		} else {
-			evaluateSynthVoiceBlockOnCpu(bufferB, voiceNum, baseIdx, fundamentalFreq);
+			evaluateSynthVoiceBlockOnCpu(bufferB, voiceNum, baseIdx, fundamentalFreq, released);
 		}
 	}
 
