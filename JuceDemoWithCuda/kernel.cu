@@ -135,20 +135,20 @@ namespace kernel {
 			sustainPrime = INV_BUFFER_BLOCK_SIZE * (end->getSustain() - start->getSustain());
 		}
 		__device__ __host__ float next() {
-			sustainLevel -= sustainPrime;
+			sustainLevel += sustainPrime;
 			switch (mode) {
 			case AttackMode:
-				attackPrime += attackDoublePrime;
 				value += attackPrime;
+				attackPrime += attackDoublePrime;
 				if (value >= 1.0f) {
 					value = 1.0f;
 					mode = DecayMode;
 				}
 				break;
 			case DecayMode:
-				decayPrime += decayDoublePrime;
 				value += decayPrime;
-				if (value <= sustainLevel) {
+				decayPrime += decayDoublePrime;
+				if (value < sustainLevel) {
 					value = sustainLevel;
 					mode = SustainMode;
 				}
@@ -233,12 +233,12 @@ namespace kernel {
 
 	// code to run at shutdown (free buffers, etc)
 	static void teardown() {
+		std::unique_lock<std::mutex> stateLock(synthStateMutex);
 		// free the sample buffer if we allocated it and it hasn't already been freed.
 		if (d_synthState != NULL) {
 			if (hasCudaDevice()) {
 				checkCudaError(cudaFree(d_synthState));
-			}
-			else {
+			} else {
 				free(d_synthState);
 			}
 			// avoid double-frees
@@ -249,14 +249,18 @@ namespace kernel {
 	// code to run on first-time audio calculation
 	static void startup() {
 		atexit(&teardown);
+		//SynthState defaultState;
+		std::unique_lock<std::mutex> stateLock(synthStateMutex);
 		if (hasCudaDevice()) {
 			// allocate sample buffer on device
 			checkCudaError(cudaMalloc(&d_synthState, sizeof(SynthState)));
 			checkCudaError(cudaMemset(d_synthState, 0, sizeof(SynthState)));
+			//checkCudaError(cudaMemcpy(d_synthState, &defaultState, sizeof(SynthState), cudaMemcpyHostToDevice));
 		} else {
 			// allocate sample buffer on cpu
 			d_synthState = (SynthState*)malloc(sizeof(SynthState));
 			memset(d_synthState, 0, sizeof(SynthState));
+			//memcpy(d_synthState, &defaultState, sizeof(SynthState));
 		}
 	}
 
@@ -397,6 +401,19 @@ namespace kernel {
 		}
 	}
 
+	static void memsetSynthState(void *dest, int value, std::size_t numBytes) {
+		// if running on device, use cudaMemset, else normal memset
+		if (hasCudaDevice()) {
+			// cudaMemset is synchronous, so concurrency is dealt with automatically
+			checkCudaError(cudaMemset(dest, value, numBytes));
+		} else {
+			// else, use normal memset
+			// Must first obtain a lock to the synth data.
+			std::unique_lock<std::mutex> stateLock(synthStateMutex);
+			memset(dest, value, numBytes);
+		}
+	}
+
 	static void copyParameterStates(const ParameterStates *newParameters, ParameterStates *dest) {
 		memcpyHostToSynthState(dest, newParameters, sizeof(ParameterStates));
 	}
@@ -424,6 +441,7 @@ namespace kernel {
 			partialStates[i] = PartialState(d_synthState, voiceNum, i);
 		}
 		memcpyHostToSynthState(&d_synthState->voiceStates[voiceNum].partialStates, partialStates, sizeof(PartialState)*NUM_PARTIALS);
+		memsetSynthState(&d_synthState->voiceStates[voiceNum].sampleBuffer, 0, CIRCULAR_BUFFER_LEN*NUM_CH*sizeof(float));
 	}
 
 }
