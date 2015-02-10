@@ -120,6 +120,9 @@ namespace kernel {
 		ADSRState() : mode(AttackMode), value(0.f) {}
 		// call at block begin to precompute values.
 		__device__ __host__ void atBlockStart(ADSR *start, ADSR *end, unsigned partialIdx, bool released) {
+			if (mode == EndMode) {
+				return;
+			}
 			float startAttack =  start->getAttackFor(partialIdx);
 			float startDecay =   start->getDecayFor(partialIdx);
 			float startSustain = start->getSustain();
@@ -128,8 +131,16 @@ namespace kernel {
 			float endDecay =     end->getDecayFor(partialIdx);
 			float endSustain =   end->getSustain();
 			float endRelease =   end->getReleaseFor(partialIdx);
-			if (released && mode != EndMode) {
+			float beginReleaseLevelStart, beginReleaseLevelEnd;
+			if (released) {
 				mode = ReleaseMode;
+				// release starts from current value
+				beginReleaseLevelStart = value;
+				beginReleaseLevelEnd = value;
+			} else {
+				// release will start from the sustain value
+				beginReleaseLevelStart = startRelease;
+				beginReleaseLevelEnd = endRelease;
 			}
 			// Calculate attack parameters
 			float dv_dtInSecondsAtAttack = 1.f / max(startAttack, INV_SAMPLE_RATE);
@@ -147,9 +158,9 @@ namespace kernel {
 			sustainLevel = startSustain;
 			sustainPrime = INV_BUFFER_BLOCK_SIZE * (endSustain - startSustain);
 			// Calculate release parameters
-			float dv_dtInSecondsAtRelease = (0.f - startSustain) / max(startRelease, INV_SAMPLE_RATE);
+			float dv_dtInSecondsAtRelease = (0.f - beginReleaseLevelStart) / max(startRelease, INV_SAMPLE_RATE);
 			releasePrime = INV_SAMPLE_RATE * dv_dtInSecondsAtRelease;
-			float dv_dtInSecondsAtRelease2 = (0.f - endSustain) / max(endRelease, INV_SAMPLE_RATE);
+			float dv_dtInSecondsAtRelease2 = (0.f - beginReleaseLevelEnd) / max(endRelease, INV_SAMPLE_RATE);
 			float dv_dt2_minus_dv_dt1InSecondsAtRelease = dv_dtInSecondsAtRelease2 - dv_dtInSecondsAtRelease;
 			releaseDoublePrime = INV_SAMPLE_RATE * dv_dt2_minus_dv_dt1InSecondsAtRelease;
 		}
