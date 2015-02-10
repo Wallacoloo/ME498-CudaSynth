@@ -7,10 +7,11 @@ ADSRComponent::ADSRComponent(JuceDemoPluginAudioProcessorEditor *editor, ADSR *a
 	  attackSlider (Slider::Rotary, Slider::NoTextBox),
 	  decaySlider  (Slider::Rotary, Slider::NoTextBox),
 	  sustainSlider(Slider::Rotary, Slider::NoTextBox),
-	  releaseSlider(Slider::Rotary, Slider::NoTextBox)
+	  releaseSlider(Slider::Rotary, Slider::NoTextBox),
+	  stretchSlider(Slider::Rotary, Slider::NoTextBox)
 {
-	Slider* sliders[4] = { &attackSlider, &decaySlider, &sustainSlider, &releaseSlider };
-	for (int i = 0; i < 4; ++i) {
+	Slider* sliders[5] = { &attackSlider, &decaySlider, &sustainSlider, &releaseSlider, &stretchSlider };
+	for (int i = 0; i < sizeof(sliders)/sizeof(Slider*); ++i) {
 		addAndMakeVisible(sliders[i]);
 		sliders[i]->addListener(this);
 		sliders[i]->setRange(0.0, 1.0, 0.01);
@@ -30,6 +31,7 @@ void ADSRComponent::resized()
 	decaySlider.setBounds  (sliderPadding * 1, 0, sliderSize, sliderSize);
 	sustainSlider.setBounds(sliderPadding * 2, 0, sliderSize, sliderSize);
 	releaseSlider.setBounds(sliderPadding * 3, 0, sliderSize, sliderSize);
+	stretchSlider.setBounds(sliderPadding * 4, 0, sliderSize, sliderSize);
 }
 
 void ADSRComponent::sliderValueChanged(Slider *slider) {
@@ -42,6 +44,8 @@ void ADSRComponent::sliderValueChanged(Slider *slider) {
 		adsr->setSustain(value);
 	} else if (slider == &releaseSlider) {
 		adsr->setRelease(value);
+	} else if (slider == &stretchSlider) {
+		adsr->setScaleByPartialIdx(value);
 	}
 	editor->parametersChanged();
 }

@@ -81,7 +81,8 @@ namespace kernel {
 			AttackMode,
 			DecayMode,
 			SustainMode,
-			ReleaseMode
+			ReleaseMode,
+			EndMode,
 		};
 		Mode mode;
 		float value;
@@ -111,28 +112,49 @@ namespace kernel {
 		float sustainLevel;
 		float sustainPrime;
 
+		// For release, use the same approach as the decay.
 		float releasePrime;
 		float releaseDoublePrime;
 	public:
 		// initialized at the start of a note
 		ADSRState() : mode(AttackMode), value(0.f) {}
 		// call at block begin to precompute values.
-		__device__ __host__ void atBlockStart(ADSR *start, ADSR *end, unsigned partialIdx) {
+		__device__ __host__ void atBlockStart(ADSR *start, ADSR *end, unsigned partialIdx, bool released) {
+			float startAttack =  start->getAttackFor(partialIdx);
+			float startDecay =   start->getDecayFor(partialIdx);
+			float startSustain = start->getSustain();
+			float startRelease = start->getReleaseFor(partialIdx);
+			float endAttack =    end->getAttackFor(partialIdx);
+			float endDecay =     end->getDecayFor(partialIdx);
+			float endSustain =   end->getSustain();
+			float endRelease =   end->getReleaseFor(partialIdx);
+			if (released && mode != EndMode) {
+				mode = ReleaseMode;
+			}
 			// Calculate attack parameters
-			float dv_dtInSecondsAtAttack = 1.f / max(start->getAttack(), INV_SAMPLE_RATE);
+			float dv_dtInSecondsAtAttack = 1.f / max(startAttack, INV_SAMPLE_RATE);
 			attackPrime = INV_SAMPLE_RATE * dv_dtInSecondsAtAttack;
-			float dv_dtInSecondsAtAttack2 = 1.f / max(end->getAttack(), INV_SAMPLE_RATE);
+			float dv_dtInSecondsAtAttack2 = 1.f / max(endAttack, INV_SAMPLE_RATE);
 			float dv_dt2_minus_dv_dt1InSecondsAtAttack = dv_dtInSecondsAtAttack2 - dv_dtInSecondsAtAttack;
 			attackDoublePrime = INV_SAMPLE_RATE * dv_dt2_minus_dv_dt1InSecondsAtAttack;
 			// Calculate delay parameters
-			float dv_dtInSecondsAtDecay = (start->getSustain()-1.f) / max(start->getDecay(), INV_SAMPLE_RATE);
+			float dv_dtInSecondsAtDecay = (startSustain-1.f) / max(startDecay, INV_SAMPLE_RATE);
 			decayPrime = INV_SAMPLE_RATE * dv_dtInSecondsAtDecay;
-			float dv_dtInSecondsAtDecay2 = (end->getSustain() - 1.f) / max(end->getDecay(), INV_SAMPLE_RATE);
+			float dv_dtInSecondsAtDecay2 = (endSustain - 1.f) / max(endDecay, INV_SAMPLE_RATE);
 			float dv_dt2_minus_dv_dt1InSecondsAtDecay = dv_dtInSecondsAtDecay2 - dv_dtInSecondsAtDecay;
 			decayDoublePrime = INV_SAMPLE_RATE * dv_dt2_minus_dv_dt1InSecondsAtDecay;
 			// Calculate sustain parameters
-			sustainLevel = start->getSustain();
-			sustainPrime = INV_BUFFER_BLOCK_SIZE * (end->getSustain() - start->getSustain());
+			sustainLevel = startSustain;
+			sustainPrime = INV_BUFFER_BLOCK_SIZE * (endSustain - startSustain);
+			// Calculate release parameters
+			float dv_dtInSecondsAtRelease = (0.f - startSustain) / max(startRelease, INV_SAMPLE_RATE);
+			releasePrime = INV_SAMPLE_RATE * dv_dtInSecondsAtRelease;
+			float dv_dtInSecondsAtRelease2 = (0.f - endSustain) / max(endRelease, INV_SAMPLE_RATE);
+			float dv_dt2_minus_dv_dt1InSecondsAtRelease = dv_dtInSecondsAtRelease2 - dv_dtInSecondsAtRelease;
+			releaseDoublePrime = INV_SAMPLE_RATE * dv_dt2_minus_dv_dt1InSecondsAtRelease;
+		}
+		__device__ __host__ bool isActive() {
+			return mode != EndMode;
 		}
 		__device__ __host__ float next() {
 			sustainLevel += sustainPrime;
@@ -140,7 +162,8 @@ namespace kernel {
 			case AttackMode:
 				value += attackPrime;
 				attackPrime += attackDoublePrime;
-				if (value >= 1.0f) {
+				// check if it's time to move to the next mode or if value concave-down & no longer increasing
+				if (value >= 1.0f || attackPrime < 0) {
 					value = 1.0f;
 					mode = DecayMode;
 				}
@@ -148,17 +171,27 @@ namespace kernel {
 			case DecayMode:
 				value += decayPrime;
 				decayPrime += decayDoublePrime;
-				if (value < sustainLevel) {
+				// check if it's time to move to the next mode or if value is concave-up & no longer decreasing
+				if (value < sustainLevel || decayPrime > 0) {
 					value = sustainLevel;
 					mode = SustainMode;
 				}
 				break;
-			default:
 			case SustainMode:
 				// must update value to the new sustain level computed above
 				value = sustainLevel;
 				break;
 			case ReleaseMode:
+				value += releasePrime;
+				releasePrime += releaseDoublePrime;
+				// check if it's time to move to the next mode or if value is concave-up & no longer decreasing
+				if (value <= 0.f || releasePrime > 0) {
+					value = 0.f;
+					mode = EndMode;
+				}
+				break;
+			default:
+			case EndMode:
 				break;
 			}
 			return value;
@@ -177,7 +210,7 @@ namespace kernel {
 		ADSRState volumeEnvelope;
 		PartialState() {}
 		PartialState(struct SynthState *synthState, unsigned voiceNum, unsigned partialIdx) {}
-		__device__ __host__ void atBlockStart(struct SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq);
+		__device__ __host__ void atBlockStart(struct SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq, bool released);
 	};
 
 	struct SynthVoiceState {
@@ -191,9 +224,9 @@ namespace kernel {
 		SynthVoiceState voiceStates[MAX_SIMULTANEOUS_SYNTH_NOTES];
 	};
 
-	void PartialState::atBlockStart(struct SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq) {
+	void PartialState::atBlockStart(struct SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq, bool released) {
 		sinusoid.atBlockStart(partialIdx, fundamentalFreq);
-		volumeEnvelope.atBlockStart(&voiceState->parameterInfo.start.volumeEnvelope, &voiceState->parameterInfo.end.volumeEnvelope, partialIdx);
+		volumeEnvelope.atBlockStart(&voiceState->parameterInfo.start.volumeEnvelope, &voiceState->parameterInfo.end.volumeEnvelope, partialIdx, released);
 	}
 
 	// When summing the outputs at a specific frame for each partial, we use a reduction method.
@@ -333,7 +366,7 @@ namespace kernel {
 	__device__ __host__ void computePartialOutput(SynthState *synthState, unsigned voiceNum, unsigned baseIdx, unsigned partialIdx, float fundamentalFreq, bool released) {
 		SynthVoiceState *voiceState = &synthState->voiceStates[voiceNum];
 		PartialState* myState = &voiceState->partialStates[partialIdx];
-		myState->atBlockStart(voiceState, partialIdx, fundamentalFreq);
+		myState->atBlockStart(voiceState, partialIdx, fundamentalFreq, released);
 		for (int sampleIdx = 0; sampleIdx < BUFFER_BLOCK_SIZE; ++sampleIdx) {
 			float outputL, outputR;
 			float sinusoid = myState->sinusoid.next().imag(); // Extract the sinusoidal portion of the wave.
@@ -344,11 +377,11 @@ namespace kernel {
 			reduceOutputs(voiceState, partialIdx, baseIdx + sampleIdx, outputL, outputR);
 			updateVoiceParametersIfNeeded(voiceState, voiceNum, partialIdx);
 		}
-		if (partialIdx == 0 && released) {
+		// TODO: use a proper reduction algorithm to determine when the note is complete
+		if (partialIdx == NUM_PARTIALS-1 && !myState->volumeEnvelope.isActive()) {
 			// signal no more samples
-			unsigned bufferStartIdx = NUM_CH * (baseIdx % CIRCULAR_BUFFER_LEN);
-			voiceState->sampleBuffer[bufferStartIdx+(BUFFER_BLOCK_SIZE-1)*NUM_CH] = NAN;
-			return;
+			unsigned bufferEndIdx = NUM_CH * ((baseIdx + (BUFFER_BLOCK_SIZE - 1)) % CIRCULAR_BUFFER_LEN);
+			voiceState->sampleBuffer[bufferEndIdx] = NAN;
 		}
 	}
 

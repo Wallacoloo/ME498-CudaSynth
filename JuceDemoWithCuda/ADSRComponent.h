@@ -11,7 +11,7 @@ class ADSRComponent :
 {
 	JuceDemoPluginAudioProcessorEditor *editor;
 	ADSR *adsr;
-	Slider attackSlider, decaySlider, sustainSlider, releaseSlider;
+	Slider attackSlider, decaySlider, sustainSlider, releaseSlider, stretchSlider;
 public:
 	ADSRComponent(JuceDemoPluginAudioProcessorEditor *editor, ADSR *adsr);
 	~ADSRComponent();
