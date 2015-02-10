@@ -31,6 +31,9 @@ namespace kernel {
 		__device__ __host__ F imag() const {
 			return _i;
 		}
+		__device__ __host__ F mag() const {
+			return sqrtf(_r*_r + _i*_i);
+		}
 		__device__ __host__ ComplexT operator+(const ComplexT &other) const {
 			return ComplexT(_r + other._r, _i + other._i);
 		}
@@ -66,10 +69,13 @@ namespace kernel {
 		PhaseT phaseDoublePrime;
 	public:
 		Sinuisoidal() : phase(1, 0) {}
-		__device__ __host__ void atBlockStart(int partialIdx, float fundamentalFreq) {
-			float angleDelta = fundamentalFreq * INV_SAMPLE_RATE * (partialIdx + 1);
+		__device__ __host__ void newFrequency(float frequency) {
+			float angleDelta = INV_SAMPLE_RATE * frequency;
 			phasePrime = PhaseT(angleDelta);
 			phaseDoublePrime = PhaseT(1, 0);
+		}
+		__device__ __host__ void newDepth(float depth) {
+			phase *= depth / phase.mag();
 		}
 		__device__ __host__ PhaseT next() {
 			phasePrime *= phaseDoublePrime;
@@ -212,6 +218,31 @@ namespace kernel {
 		}
 	};
 
+	class LFOState {
+		Sinuisoidal sinusoid;
+	public:
+		__device__ __host__ void atBlockStart(LFO *start, LFO *end, unsigned partialIdx) {
+			sinusoid.newFrequency(start->getLfoFreqFor(partialIdx));
+			sinusoid.newDepth(start->getLfoDepthFor(partialIdx));
+		}
+		float next() {
+			return sinusoid.next().imag();
+		}
+	};
+
+	class ADSRLFOEnvelopeState {
+		ADSRState adsr;
+		LFOState lfo;
+	public:
+		__device__ __host__ void atBlockStart(ADSR *adsrStart, LFO *lfoStart, ADSR *adsrEnd, LFO *lfoEnd, unsigned partialIdx, bool released) {
+			adsr.atBlockStart(adsrStart, adsrEnd, partialIdx, released);
+			lfo.atBlockStart(lfoStart, lfoEnd, partialIdx);
+		}
+		float next() {
+			return adsr.next() + lfo.next();
+		}
+	};
+
 	// Contains info about the parameter states at ANY sample in the block
 	struct FullBlockParameterInfo {
 		ParameterStates start;
@@ -239,7 +270,7 @@ namespace kernel {
 	};
 
 	void PartialState::atBlockStart(struct SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq, bool released) {
-		sinusoid.atBlockStart(partialIdx, fundamentalFreq);
+		sinusoid.newFrequency((partialIdx + 1)*fundamentalFreq);
 		volumeEnvelope.atBlockStart(&voiceState->parameterInfo.start.volumeEnvelope, &voiceState->parameterInfo.end.volumeEnvelope, partialIdx, released);
 	}
 

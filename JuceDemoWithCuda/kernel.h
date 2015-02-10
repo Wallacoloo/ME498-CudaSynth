@@ -63,6 +63,37 @@ namespace kernel {
 		}
 	};
 
+	class LFO {
+		float lfoFreq;
+		float lfoDepth;
+	public:
+		LFO(float lfoFreq=0.f, float lfoDepth=0.f) : lfoFreq(lfoFreq), lfoDepth(lfoDepth) {}
+		inline void setLfoFreq(float w) {
+			lfoFreq = w;
+		}
+		inline void setLfoDepth(float d) {
+			lfoDepth = d;
+		}
+		inline HOST DEVICE float getLfoFreqFor(unsigned partialIdx) const {
+			return lfoFreq;
+		}
+		inline HOST DEVICE float getLfoDepthFor(unsigned partialIdx) const {
+			return lfoDepth;
+		}
+	};
+
+	class ADSRLFOEnvelope {
+		ADSR adsr;
+		LFO lfo;
+	public:
+		ADSR* getAdsr() {
+			return &adsr;
+		}
+		LFO* getLfo() {
+			return &lfo;
+		}
+	};
+
 	// Struct to hold ALL parameter states at a single instant in time.
 	// There will be two of these sent during each synthesis block:
 	//   1 for at the start of the block,
