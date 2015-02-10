@@ -3,13 +3,13 @@
 
 #include "../JuceLibraryCode/JuceHeader.h"
 
-class JuceDemoPluginAudioProcessorEditor;
+class PluginEditor;
 
 class PartialLevelsComponent : public Component {
-	JuceDemoPluginAudioProcessorEditor *editor;
+	PluginEditor *editor;
 	float *partialLevels;
 public:
-	PartialLevelsComponent(JuceDemoPluginAudioProcessorEditor *editor, float *partialLevels);
+	PartialLevelsComponent(PluginEditor *editor, float *partialLevels);
 	~PartialLevelsComponent();
 	void paint(Graphics& g) override;
 	void mouseDrag(const MouseEvent &event) override;

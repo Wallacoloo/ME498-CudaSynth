@@ -14,18 +14,18 @@
 #include "../JuceLibraryCode/JuceHeader.h"
 #include "PluginProcessor.h"
 #include "PartialLevelsComponent.h"
-#include "ADSRComponent.h"
+#include "EnvelopeEditor.h"
 #include "kernel.h"
 
 
 //==============================================================================
 /** This is the editor component that our filter will display.
 */
-class JuceDemoPluginAudioProcessorEditor  : public AudioProcessorEditor
+class PluginEditor  : public AudioProcessorEditor
 {
 public:
-    JuceDemoPluginAudioProcessorEditor (JuceDemoPluginAudioProcessor&);
-    ~JuceDemoPluginAudioProcessorEditor();
+    PluginEditor (PluginProcessor&);
+    ~PluginEditor();
 
     //==============================================================================
     void paint (Graphics&) override;
@@ -38,13 +38,13 @@ private:
 	ParameterStates parameterStates;
     MidiKeyboardComponent midiKeyboard;
 	PartialLevelsComponent partialLevelsComponent;
-	ADSRComponent volumeADSR;
+	EnvelopeEditor volumeADSR;
     ScopedPointer<ResizableCornerComponent> resizer;
     ComponentBoundsConstrainer resizeLimits;
 
-    JuceDemoPluginAudioProcessor& getProcessor() const
+    PluginProcessor& getProcessor() const
     {
-        return static_cast<JuceDemoPluginAudioProcessor&> (processor);
+		return static_cast<PluginProcessor&> (processor);
     }
 };
 

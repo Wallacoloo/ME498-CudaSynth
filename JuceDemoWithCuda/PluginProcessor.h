@@ -17,12 +17,12 @@
 /**
     As the name suggest, this class does the actual audio processing.
 */
-class JuceDemoPluginAudioProcessor  : public AudioProcessor
+class PluginProcessor  : public AudioProcessor
 {
 public:
     //==============================================================================
-    JuceDemoPluginAudioProcessor();
-    ~JuceDemoPluginAudioProcessor();
+	PluginProcessor();
+	~PluginProcessor();
 
     //==============================================================================
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
@@ -102,7 +102,7 @@ private:
     // the synth!
     Synthesiser synth;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (JuceDemoPluginAudioProcessor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };
 
 #endif  // __PLUGINPROCESSOR_H_526ED7A9__

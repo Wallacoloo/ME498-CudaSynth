@@ -2,7 +2,7 @@
 #include "PluginEditor.h"
 
 //==============================================================================
-JuceDemoPluginAudioProcessorEditor::JuceDemoPluginAudioProcessorEditor (JuceDemoPluginAudioProcessor& owner)
+PluginEditor::PluginEditor(PluginProcessor& owner)
     : AudioProcessorEditor (owner),
       midiKeyboard (owner.keyboardState, MidiKeyboardComponent::horizontalKeyboard),
 	  partialLevelsComponent(this, parameterStates.partialLevels),
@@ -26,19 +26,19 @@ JuceDemoPluginAudioProcessorEditor::JuceDemoPluginAudioProcessorEditor (JuceDemo
 	parametersChanged();
 }
 
-JuceDemoPluginAudioProcessorEditor::~JuceDemoPluginAudioProcessorEditor()
+PluginEditor::~PluginEditor()
 {
 }
 
 //==============================================================================
-void JuceDemoPluginAudioProcessorEditor::paint (Graphics& g)
+void PluginEditor::paint (Graphics& g)
 {
     g.setGradientFill (ColourGradient (Colours::white, 0, 0,
                                        Colours::grey, 0, (float) getHeight(), false));
     g.fillAll();
 }
 
-void JuceDemoPluginAudioProcessorEditor::resized()
+void PluginEditor::resized()
 {
 
     const int keyboardHeight = 70;
@@ -71,6 +71,6 @@ void JuceDemoPluginAudioProcessorEditor::resized()
     }
 }*/
 
-void JuceDemoPluginAudioProcessorEditor::parametersChanged() {
+void PluginEditor::parametersChanged() {
 	kernel::parameterStatesChanged(&parameterStates);
 }

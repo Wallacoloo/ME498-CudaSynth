@@ -5,7 +5,7 @@
 #include <algorithm>
 
 
-PartialLevelsComponent::PartialLevelsComponent(JuceDemoPluginAudioProcessorEditor *editor, float *partialLevels)
+PartialLevelsComponent::PartialLevelsComponent(PluginEditor *editor, float *partialLevels)
 	: editor(editor),
 	  partialLevels(partialLevels)
 {

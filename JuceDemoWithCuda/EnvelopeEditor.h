@@ -1,21 +1,21 @@
-#ifndef ADSRCOMPONENT_H
-#define ADSRCOMPONENT_H
+#ifndef ENVELOPEEDITOR_H
+#define ENVELOPEEDITOR_H
 
 #include "../JuceLibraryCode/JuceHeader.h"
 #include "kernel.h"
 
-class JuceDemoPluginAudioProcessorEditor;
+class PluginEditor;
 
-class ADSRComponent :
+class EnvelopeEditor :
 	public Component, public SliderListener
 {
-	JuceDemoPluginAudioProcessorEditor *editor;
+	PluginEditor *editor;
 	ADSR *adsr;
 	Slider attackSlider, decaySlider, sustainSlider, releaseSlider, stretchSlider;
 	Label attackLabel, decayLabel, sustainLabel, releaseLabel, stretchLabel;
 public:
-	ADSRComponent(JuceDemoPluginAudioProcessorEditor *editor, ADSR *adsr);
-	~ADSRComponent();
+	EnvelopeEditor(PluginEditor *editor, ADSR *adsr);
+	~EnvelopeEditor();
 	void sliderValueChanged(Slider*) override;
 	void resized() override;
 };

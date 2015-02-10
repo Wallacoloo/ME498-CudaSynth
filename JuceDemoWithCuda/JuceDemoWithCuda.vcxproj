@@ -228,7 +228,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     <CudaCompile Include="kernel.cu" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="ADSRComponent.cpp" />
+    <ClCompile Include="EnvelopeEditor.cpp" />
     <ClCompile Include="JuceLibraryCode\modules\juce_audio_basics\juce_audio_basics.cpp" />
     <ClCompile Include="JuceLibraryCode\modules\juce_audio_devices\juce_audio_devices.cpp" />
     <ClCompile Include="JuceLibraryCode\modules\juce_audio_formats\juce_audio_formats.cpp" />
@@ -255,7 +255,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     <ClCompile Include="StandalonePlugin.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="ADSRComponent.h" />
+    <ClInclude Include="EnvelopeEditor.h" />
     <ClInclude Include="defines.h" />
     <ClInclude Include="kernel.h" />
     <ClInclude Include="PartialLevelsComponent.h" />

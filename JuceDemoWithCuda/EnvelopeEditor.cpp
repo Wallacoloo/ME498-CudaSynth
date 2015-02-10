@@ -1,8 +1,8 @@
-#include "ADSRComponent.h"
+#include "EnvelopeEditor.h"
 
 #include "PluginEditor.h"
 
-ADSRComponent::ADSRComponent(JuceDemoPluginAudioProcessorEditor *editor, ADSR *adsr)
+EnvelopeEditor::EnvelopeEditor(PluginEditor *editor, ADSR *adsr)
 	: editor(editor), adsr(adsr),
 	  attackSlider (Slider::Rotary, Slider::NoTextBox),
 	  decaySlider  (Slider::Rotary, Slider::NoTextBox),
@@ -32,11 +32,11 @@ ADSRComponent::ADSRComponent(JuceDemoPluginAudioProcessorEditor *editor, ADSR *a
 }
 
 
-ADSRComponent::~ADSRComponent()
+EnvelopeEditor::~EnvelopeEditor()
 {
 }
 
-void ADSRComponent::resized()
+void EnvelopeEditor::resized()
 {
 	int sliderSize = 36;
 	int sliderPadding = 40;
@@ -49,7 +49,7 @@ void ADSRComponent::resized()
 	}
 }
 
-void ADSRComponent::sliderValueChanged(Slider *slider) {
+void EnvelopeEditor::sliderValueChanged(Slider *slider) {
 	float value = slider->getValue();
 	if (slider == &attackSlider) {
 		adsr->setAttack(value);
