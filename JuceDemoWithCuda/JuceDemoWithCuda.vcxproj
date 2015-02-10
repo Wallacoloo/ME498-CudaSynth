@@ -228,7 +228,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     <CudaCompile Include="kernel.cu" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="EnvelopeEditor.cpp" />
+    <ClCompile Include="ADSREditor.cpp" />
     <ClCompile Include="JuceLibraryCode\modules\juce_audio_basics\juce_audio_basics.cpp" />
     <ClCompile Include="JuceLibraryCode\modules\juce_audio_devices\juce_audio_devices.cpp" />
     <ClCompile Include="JuceLibraryCode\modules\juce_audio_formats\juce_audio_formats.cpp" />
@@ -249,15 +249,19 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     <ClCompile Include="JuceLibraryCode\modules\juce_graphics\juce_graphics.cpp" />
     <ClCompile Include="JuceLibraryCode\modules\juce_gui_basics\juce_gui_basics.cpp" />
     <ClCompile Include="JuceLibraryCode\modules\juce_gui_extra\juce_gui_extra.cpp" />
+    <ClCompile Include="LFOEditor.cpp" />
+    <ClCompile Include="ParameterEditor.cpp" />
     <ClCompile Include="PartialLevelsComponent.cpp" />
     <ClCompile Include="PluginEditor.cpp" />
     <ClCompile Include="PluginProcessor.cpp" />
     <ClCompile Include="StandalonePlugin.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="EnvelopeEditor.h" />
+    <ClInclude Include="ADSREditor.h" />
     <ClInclude Include="defines.h" />
     <ClInclude Include="kernel.h" />
+    <ClInclude Include="LFOEditor.h" />
+    <ClInclude Include="ParameterEditor.h" />
     <ClInclude Include="PartialLevelsComponent.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

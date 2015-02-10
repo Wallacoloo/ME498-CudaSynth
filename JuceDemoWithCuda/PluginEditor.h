@@ -14,7 +14,7 @@
 #include "../JuceLibraryCode/JuceHeader.h"
 #include "PluginProcessor.h"
 #include "PartialLevelsComponent.h"
-#include "EnvelopeEditor.h"
+#include "ADSREditor.h"
 #include "kernel.h"
 
 
@@ -38,7 +38,7 @@ private:
 	ParameterStates parameterStates;
     MidiKeyboardComponent midiKeyboard;
 	PartialLevelsComponent partialLevelsComponent;
-	EnvelopeEditor volumeADSR;
+	ADSREditor volumeADSR;
     ScopedPointer<ResizableCornerComponent> resizer;
     ComponentBoundsConstrainer resizeLimits;
 

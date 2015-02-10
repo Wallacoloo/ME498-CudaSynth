@@ -1,25 +1,25 @@
-#include "EnvelopeEditor.h"
+#include "LFOEditor.h"
 
 #include "PluginEditor.h"
 
-EnvelopeEditor::EnvelopeEditor(PluginEditor *editor, ADSR *adsr)
-	: editor(editor), adsr(adsr),
-	  attackSlider (Slider::Rotary, Slider::NoTextBox),
-	  decaySlider  (Slider::Rotary, Slider::NoTextBox),
-	  sustainSlider(Slider::Rotary, Slider::NoTextBox),
-	  releaseSlider(Slider::Rotary, Slider::NoTextBox),
-	  stretchSlider(Slider::Rotary, Slider::NoTextBox),
-	  attackLabel("Attack", "A"),
-	  decayLabel("Decay", "D"),
-	  sustainLabel("Sustain", "S"),
-	  releaseLabel("Release", "R"),
-	  stretchLabel("Stretch", "Stretch")
+LFOEditor::LFOEditor(PluginEditor *editor, LFO *lfo)
+	: editor(editor), lfo(lfo),
+	attackSlider(Slider::Rotary, Slider::NoTextBox),
+	decaySlider(Slider::Rotary, Slider::NoTextBox),
+	sustainSlider(Slider::Rotary, Slider::NoTextBox),
+	releaseSlider(Slider::Rotary, Slider::NoTextBox),
+	stretchSlider(Slider::Rotary, Slider::NoTextBox),
+	attackLabel("Attack", "A"),
+	decayLabel("Decay", "D"),
+	sustainLabel("Sustain", "S"),
+	releaseLabel("Release", "R"),
+	stretchLabel("Stretch", "Stretch")
 {
 	Slider* sliders[5] = { &attackSlider, &decaySlider, &sustainSlider, &releaseSlider, &stretchSlider };
 	Label *labels[5] = { &attackLabel, &decayLabel, &sustainLabel, &releaseLabel, &stretchLabel };
 	float lowerBounds[5] = { 0, 0, 0, 0, -0.8 };
 	float upperBounds[5] = { 2, 2, 1, 2, 5 };
-	for (int i = 0; i < sizeof(sliders)/sizeof(Slider*); ++i) {
+	for (int i = 0; i < sizeof(sliders) / sizeof(Slider*); ++i) {
 		// configure slider
 		addAndMakeVisible(sliders[i]);
 		sliders[i]->addListener(this);
@@ -32,11 +32,11 @@ EnvelopeEditor::EnvelopeEditor(PluginEditor *editor, ADSR *adsr)
 }
 
 
-EnvelopeEditor::~EnvelopeEditor()
+LFOEditor::~LFOEditor()
 {
 }
 
-void EnvelopeEditor::resized()
+void LFOEditor::resized()
 {
 	int sliderSize = 36;
 	int sliderPadding = 40;
@@ -49,18 +49,22 @@ void EnvelopeEditor::resized()
 	}
 }
 
-void EnvelopeEditor::sliderValueChanged(Slider *slider) {
-	float value = slider->getValue();
+void LFOEditor::sliderValueChanged(Slider *slider) {
+	/*float value = slider->getValue();
 	if (slider == &attackSlider) {
 		adsr->setAttack(value);
-	} else if (slider == &decaySlider) {
+	}
+	else if (slider == &decaySlider) {
 		adsr->setDecay(value);
-	} else if (slider == &sustainSlider) {
+	}
+	else if (slider == &sustainSlider) {
 		adsr->setSustain(value);
-	} else if (slider == &releaseSlider) {
+	}
+	else if (slider == &releaseSlider) {
 		adsr->setRelease(value);
-	} else if (slider == &stretchSlider) {
+	}
+	else if (slider == &stretchSlider) {
 		adsr->setScaleByPartialIdx(value);
 	}
-	editor->parametersChanged();
+	editor->parametersChanged();*/
 }
