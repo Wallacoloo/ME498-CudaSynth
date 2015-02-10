@@ -1,7 +1,5 @@
 #include "ADSREditor.h"
 
-#include "PluginEditor.h"
-
 static const char* labelNames[] = { "A", "D", "S", "R", "Stretch" };
 
 ADSREditor::ADSREditor(PluginEditor *editor, ADSR *adsr)

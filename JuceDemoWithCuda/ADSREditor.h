@@ -8,7 +8,6 @@ class PluginEditor;
 
 class ADSREditor : public ParameterEditor
 {
-	PluginEditor *editor;
 	ADSR *adsr;
 public:
 	ADSREditor(PluginEditor *editor, ADSR *adsr);

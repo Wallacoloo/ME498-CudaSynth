@@ -1,23 +1,18 @@
-#ifndef ENVELOPEEDITOR_H
+#ifndef LFOEDITOR_H
 #define LFOEDITOR_H
 
 #include "../JuceLibraryCode/JuceHeader.h"
-#include "kernel.h"
+#include "ParameterEditor.h"
 
 class PluginEditor;
 
-class LFOEditor :
-	public Component, public SliderListener
+class LFOEditor : public ParameterEditor
 {
-	PluginEditor *editor;
 	LFO *lfo;
-	Slider attackSlider, decaySlider, sustainSlider, releaseSlider, stretchSlider;
-	Label attackLabel, decayLabel, sustainLabel, releaseLabel, stretchLabel;
 public:
 	LFOEditor(PluginEditor *editor, LFO *lfo);
 	~LFOEditor();
-	void sliderValueChanged(Slider*) override;
-	void resized() override;
+	void onParameterChanged(int parameterNum, float value) override;
 };
 
 #endif
