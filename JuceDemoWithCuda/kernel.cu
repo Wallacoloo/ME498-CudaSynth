@@ -22,6 +22,9 @@ namespace kernel {
 	public:
 		__device__ __host__ ComplexT() : _r(0), _i(0) {}
 		__device__ __host__ ComplexT(F real, F imag) : _r(real), _i(imag) {}
+		__device__ __host__ ComplexT(F angleRad) {
+			sincosf(angleRad, &_i, &_r);
+		}
 		__device__ __host__ F real() const {
 			return _r;
 		}
@@ -65,7 +68,7 @@ namespace kernel {
 		Sinuisoidal() : phase(1, 0) {}
 		__device__ __host__ void atBlockStart(int partialIdx, float fundamentalFreq) {
 			float angleDelta = fundamentalFreq * INV_SAMPLE_RATE * (partialIdx + 1);
-			phasePrime = PhaseT(cosf(angleDelta), sinf(angleDelta));
+			phasePrime = PhaseT(angleDelta);
 			phaseDoublePrime = PhaseT(1, 0);
 		}
 		__device__ __host__ PhaseT next() {
