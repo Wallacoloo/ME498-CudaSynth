@@ -44,7 +44,7 @@ void JuceDemoPluginAudioProcessorEditor::resized()
     const int keyboardHeight = 70;
     midiKeyboard.setBounds (4, getHeight() - keyboardHeight - 4, getWidth() - 8, keyboardHeight);
 
-	volumeADSR.setBounds(144, 68, 192, 100);
+	volumeADSR.setBounds(144, 68, 256, 128);
 	//attackSlider.setBounds(256, 60, 150, 40);
 
     resizer->setBounds (getWidth() - 16, getHeight() - 16, 16, 16);
