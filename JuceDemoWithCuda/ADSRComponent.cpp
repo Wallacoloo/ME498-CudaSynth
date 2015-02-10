@@ -11,10 +11,12 @@ ADSRComponent::ADSRComponent(JuceDemoPluginAudioProcessorEditor *editor, ADSR *a
 	  stretchSlider(Slider::Rotary, Slider::NoTextBox)
 {
 	Slider* sliders[5] = { &attackSlider, &decaySlider, &sustainSlider, &releaseSlider, &stretchSlider };
+	float lowerBounds[5] = { 0, 0, 0, 0, 0 };
+	float upperBounds[5] = { 2, 2, 1, 2, 5 };
 	for (int i = 0; i < sizeof(sliders)/sizeof(Slider*); ++i) {
 		addAndMakeVisible(sliders[i]);
 		sliders[i]->addListener(this);
-		sliders[i]->setRange(0.0, 1.0, 0.01);
+		sliders[i]->setRange(lowerBounds[i], upperBounds[i], 0.0);
 	}
 }
 
