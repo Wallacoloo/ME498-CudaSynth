@@ -173,7 +173,7 @@ namespace kernel {
 			float dv_dt2_minus_dv_dt1InSecondsAtRelease = dv_dtInSecondsAtRelease2 - dv_dtInSecondsAtRelease;
 			releaseDoublePrime = INV_SAMPLE_RATE * dv_dt2_minus_dv_dt1InSecondsAtRelease;
 		}
-		__device__ __host__ bool isActive() {
+		__device__ __host__ bool isActive() const {
 			return mode != EndMode;
 		}
 		__device__ __host__ float next() {
@@ -225,7 +225,7 @@ namespace kernel {
 			sinusoid.newFrequency(start->getLfoFreqFor(partialIdx));
 			sinusoid.newDepth(start->getLfoDepthFor(partialIdx));
 		}
-		float next() {
+		__device__ __host__ float next() {
 			return sinusoid.next().imag();
 		}
 	};
@@ -234,12 +234,15 @@ namespace kernel {
 		ADSRState adsr;
 		LFOState lfo;
 	public:
-		__device__ __host__ void atBlockStart(ADSR *adsrStart, LFO *lfoStart, ADSR *adsrEnd, LFO *lfoEnd, unsigned partialIdx, bool released) {
-			adsr.atBlockStart(adsrStart, adsrEnd, partialIdx, released);
-			lfo.atBlockStart(lfoStart, lfoEnd, partialIdx);
+		__device__ __host__ void atBlockStart(ADSRLFOEnvelope *envStart, ADSRLFOEnvelope *envEnd, unsigned partialIdx, bool released) {
+			adsr.atBlockStart(envStart->getAdsr(), envEnd->getAdsr(), partialIdx, released);
+			lfo.atBlockStart(envStart->getLfo(), envEnd->getLfo(), partialIdx);
 		}
-		float next() {
+		__device__ __host__ float next() {
 			return adsr.next() + lfo.next();
+		}
+		__device__ __host__ bool isActive() const {
+			return adsr.isActive();
 		}
 	};
 
@@ -252,7 +255,7 @@ namespace kernel {
 	// Contains extra state information relevant to each individual partial
 	struct PartialState {
 		Sinuisoidal sinusoid;
-		ADSRState volumeEnvelope;
+		ADSRLFOEnvelopeState volumeEnvelope;
 		PartialState() {}
 		PartialState(struct SynthState *synthState, unsigned voiceNum, unsigned partialIdx) {}
 		__device__ __host__ void atBlockStart(struct SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq, bool released);

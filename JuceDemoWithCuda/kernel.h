@@ -86,10 +86,10 @@ namespace kernel {
 		ADSR adsr;
 		LFO lfo;
 	public:
-		ADSR* getAdsr() {
+		inline HOST DEVICE ADSR* getAdsr() {
 			return &adsr;
 		}
-		LFO* getLfo() {
+		inline HOST DEVICE LFO* getLfo() {
 			return &lfo;
 		}
 	};
@@ -102,7 +102,7 @@ namespace kernel {
 	struct ParameterStates {
 		// hand-drawn partial envelopes
 		float partialLevels[NUM_PARTIALS];
-		ADSR volumeEnvelope;
+		ADSRLFOEnvelope volumeEnvelope;
 	};
 
 	// Call to evaluate the next N samples of a synthesizer voice into bufferB.

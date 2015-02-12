@@ -15,6 +15,8 @@ ParameterEditor::ParameterEditor(PluginEditor *editor, int nSliders, const char*
 		labels[i].setFont(Font(11.f));
 		labels[i].setText(labelNames[i], sendNotification);
 	}
+	// call resized() to compute the desired bounds
+	resized();
 }
 
 
@@ -39,6 +41,7 @@ void ParameterEditor::resized()
 		sliders[i].setBounds(sliderPadding*i, 0, sliderSize, sliderSize);
 		labels[i].setBounds(sliderPadding*i, sliderSize, sliderSize, labelHeight);
 	}
+	setSize(sliderPadding*nSliders, sliderSize + labelHeight);
 }
 
 void ParameterEditor::sliderValueChanged(Slider *slider) {
