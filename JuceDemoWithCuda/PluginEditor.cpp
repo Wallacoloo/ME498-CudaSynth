@@ -33,9 +33,9 @@ PluginEditor::~PluginEditor()
 {
 }
 
-//==============================================================================
 void PluginEditor::paint (Graphics& g)
 {
+	// paint a gradient background
     g.setGradientFill (ColourGradient (Colours::white, 0, 0,
                                        Colours::grey, 0, (float) getHeight(), false));
     g.fillAll();
@@ -61,24 +61,6 @@ void PluginEditor::resized()
     getProcessor().lastUIWidth = getWidth();
     getProcessor().lastUIHeight = getHeight();
 }
-
-// This is our Slider::Listener callback, when the user drags a slider.
-/*void JuceDemoPluginAudioProcessorEditor::sliderValueChanged (Slider* slider)
-{
-    if (slider == &gainSlider)
-    {
-        // It's vital to use setParameterNotifyingHost to change any parameters that are automatable
-        // by the host, rather than just modifying them directly, otherwise the host won't know
-        // that they've changed.
-        getProcessor().setParameterNotifyingHost (JuceDemoPluginAudioProcessor::gainParam,
-                                                  (float) gainSlider.getValue());
-    }
-    else if (slider == &delaySlider)
-    {
-        getProcessor().setParameterNotifyingHost (JuceDemoPluginAudioProcessor::delayParam,
-                                                  (float) delaySlider.getValue());
-    }
-}*/
 
 void PluginEditor::parametersChanged() {
 	kernel::parameterStatesChanged(&parameterStates);

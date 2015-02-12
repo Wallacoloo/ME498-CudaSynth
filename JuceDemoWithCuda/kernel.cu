@@ -69,12 +69,22 @@ namespace kernel {
 		PhaseT phaseDoublePrime;
 	public:
 		Sinuisoidal() : phase(1, 0) {}
-		__device__ __host__ void newFrequency(float frequency) {
-			float angleDelta = INV_SAMPLE_RATE * frequency;
-			phasePrime = PhaseT(angleDelta);
+		__device__ __host__ void newFrequency(float start, float end) {
+			float wStart = INV_SAMPLE_RATE * start;
+			float wEnd = INV_SAMPLE_RATE * end;
+			PhaseT phasePrimeStart = PhaseT(wStart);
+			PhaseT phasePrimeEnd = PhaseT(wEnd);
+			phasePrime = phasePrimeStart;
 			phaseDoublePrime = PhaseT(1, 0);
+			// phasePrimeStart * doublePrime^BUFFER_BLOCK_SIZE = phasePrimeEnd
+			// (phasePrimeEnd/phasePrimeStart)^(1.0/BUFFER_BLOCK_SIZE) = doublePrime
+			// phaseDoublePrime = PhaseT(powf(wEnd / wStart, 1.0 / BUFFER_BLOCK_SIZE));
+		}
+		__device__ __host__ void newFrequency(float frequency) {
+			newFrequency(frequency, frequency);
 		}
 		__device__ __host__ void newDepth(float depth) {
+			// make the current magnitude match the desired depth
 			phase *= depth / phase.mag();
 		}
 		__device__ __host__ PhaseT next() {
@@ -239,7 +249,7 @@ namespace kernel {
 			lfo.atBlockStart(envStart->getLfo(), envEnd->getLfo(), partialIdx);
 		}
 		__device__ __host__ float next() {
-			return adsr.next() + lfo.next();
+			return adsr.next() * (1 + lfo.next());
 		}
 		__device__ __host__ bool isActive() const {
 			return adsr.isActive();
