@@ -164,6 +164,10 @@ namespace kernel {
 		float attackPrime;
 		float attackDoublePrime;
 
+		// Level at which to transition from attack to decay
+		float peakLevel;
+		float peakLevelPrime;
+
 		// decay approach (a bit more difficult, since depends on changing sustain levels too).
 		// calculate dv1/dt and dv2/dt just as in attack approach #2, based on the start decay&sustain and the end decay&sustain.
 		// Then apply same algorithm.
@@ -187,14 +191,20 @@ namespace kernel {
 			if (mode == EndMode) {
 				return;
 			}
-			float startAttack =  start->getAttackFor(partialIdx);
-			float startDecay =   start->getDecayFor(partialIdx);
-			float startSustain = start->getSustain();
-			float startRelease = start->getReleaseFor(partialIdx);
-			float endAttack =    end->getAttackFor(partialIdx);
-			float endDecay =     end->getDecayFor(partialIdx);
-			float endSustain =   end->getSustain();
-			float endRelease =   end->getReleaseFor(partialIdx);
+			float startBaseLevel =    start->getStartLevel();
+			float startAttack =       start->getAttackFor(partialIdx);
+			float startPeakLevel =    start->getPeakLevel();
+			float startDecay =        start->getDecayFor(partialIdx);
+			float startSustain =      start->getSustain();
+			float startRelease =      start->getReleaseFor(partialIdx);
+			float startReleaseLevel = start->getReleaseLevel();
+			float endBaseLevel =      end->getStartLevel();
+			float endAttack =         end->getAttackFor(partialIdx);
+			float endPeakLevel =      end->getPeakLevel();
+			float endDecay =          end->getDecayFor(partialIdx);
+			float endSustain =        end->getSustain();
+			float endRelease =        end->getReleaseFor(partialIdx);
+			float endReleaseLevel =   end->getReleaseLevel();
 			float beginReleaseLevelStart, beginReleaseLevelEnd;
 			if (released) {
 				mode = ReleaseMode;
@@ -206,25 +216,34 @@ namespace kernel {
 				beginReleaseLevelStart = startRelease;
 				beginReleaseLevelEnd = endRelease;
 			}
-			// Calculate attack parameters
-			float dv_dtInSecondsAtAttack = 1.f / max(startAttack, INV_SAMPLE_RATE);
-			attackPrime = INV_SAMPLE_RATE * dv_dtInSecondsAtAttack;
-			float dv_dtInSecondsAtAttack2 = 1.f / max(endAttack, INV_SAMPLE_RATE);
+			// Calculate attack parameters.
+			// dv/dt1 = (startPeakLevel-startBaseLevel)
+			// dv/dt2 = (endPeakLevel-endBaseLevel)
+			// dv/dt = dv/dt1 + t/deltaT*(dv/dt2-dv/dt1) + (endBaseLevel-startBaseLevel)/deltaT
+			float dv_dtInSecondsAtAttack = (startPeakLevel-startBaseLevel) / max(startAttack, INV_SAMPLE_RATE);
+			float dBaseLevel_dtInSeconds = (endBaseLevel - startBaseLevel) / max(startAttack, INV_SAMPLE_RATE);
+			attackPrime = INV_SAMPLE_RATE * (dv_dtInSecondsAtAttack + dBaseLevel_dtInSeconds);
+			float dv_dtInSecondsAtAttack2 = (endPeakLevel-endBaseLevel) / max(endAttack, INV_SAMPLE_RATE);
 			float dv_dt2_minus_dv_dt1InSecondsAtAttack = dv_dtInSecondsAtAttack2 - dv_dtInSecondsAtAttack;
 			attackDoublePrime = INV_SAMPLE_RATE * dv_dt2_minus_dv_dt1InSecondsAtAttack;
+			// Calculate peak level
+			peakLevel = startPeakLevel;
+			peakLevelPrime = INV_BUFFER_BLOCK_SIZE * (endPeakLevel - startPeakLevel);
 			// Calculate delay parameters
-			float dv_dtInSecondsAtDecay = (startSustain-1.f) / max(startDecay, INV_SAMPLE_RATE);
-			decayPrime = INV_SAMPLE_RATE * dv_dtInSecondsAtDecay;
-			float dv_dtInSecondsAtDecay2 = (endSustain - 1.f) / max(endDecay, INV_SAMPLE_RATE);
+			float dv_dtInSecondsAtDecay = (startSustain-startPeakLevel) / max(startDecay, INV_SAMPLE_RATE);
+			float dPeakLevel_dtInSeconds = (endPeakLevel - startPeakLevel) / max(startDecay, INV_SAMPLE_RATE);
+			decayPrime = INV_SAMPLE_RATE * (dv_dtInSecondsAtDecay + dPeakLevel_dtInSeconds);
+			float dv_dtInSecondsAtDecay2 = (endSustain - endPeakLevel) / max(endDecay, INV_SAMPLE_RATE);
 			float dv_dt2_minus_dv_dt1InSecondsAtDecay = dv_dtInSecondsAtDecay2 - dv_dtInSecondsAtDecay;
 			decayDoublePrime = INV_SAMPLE_RATE * dv_dt2_minus_dv_dt1InSecondsAtDecay;
 			// Calculate sustain parameters
 			sustainLevel = startSustain;
 			sustainPrime = INV_BUFFER_BLOCK_SIZE * (endSustain - startSustain);
 			// Calculate release parameters
-			float dv_dtInSecondsAtRelease = (0.f - beginReleaseLevelStart) / max(startRelease, INV_SAMPLE_RATE);
-			releasePrime = INV_SAMPLE_RATE * dv_dtInSecondsAtRelease;
-			float dv_dtInSecondsAtRelease2 = (0.f - beginReleaseLevelEnd) / max(endRelease, INV_SAMPLE_RATE);
+			float dv_dtInSecondsAtRelease = (startReleaseLevel - beginReleaseLevelStart) / max(startRelease, INV_SAMPLE_RATE);
+			float dReleaseLevel_dtInSeconds = (endReleaseLevel - startReleaseLevel) / max(startRelease, INV_SAMPLE_RATE);
+			releasePrime = INV_SAMPLE_RATE * (dv_dtInSecondsAtRelease + dReleaseLevel_dtInSeconds);
+			float dv_dtInSecondsAtRelease2 = (endReleaseLevel - beginReleaseLevelEnd) / max(endRelease, INV_SAMPLE_RATE);
 			float dv_dt2_minus_dv_dt1InSecondsAtRelease = dv_dtInSecondsAtRelease2 - dv_dtInSecondsAtRelease;
 			releaseDoublePrime = INV_SAMPLE_RATE * dv_dt2_minus_dv_dt1InSecondsAtRelease;
 		}
@@ -237,9 +256,10 @@ namespace kernel {
 			case AttackMode:
 				value += attackPrime;
 				attackPrime += attackDoublePrime;
+				peakLevel += peakLevelPrime;
 				// check if it's time to move to the next mode or if value concave-down & no longer increasing
-				if (value >= 1.0f || attackPrime < 0) {
-					value = 1.0f;
+				if (value >= peakLevel || attackPrime < 0) {
+					value = peakLevel;
 					mode = DecayMode;
 				}
 				break;

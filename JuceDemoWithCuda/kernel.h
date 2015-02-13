@@ -6,21 +6,32 @@
 namespace kernel {
 
 	class ADSR {
-		// time it takes for the signal to rise to 1.0
+		// level at t=0
+		float startLevel;
+		// time it takes for the signal to rise to its peak
 		float a;
+		float peakLevel;
 		// time it takes for the signal to decay to the sustain level
 		float d;
 		// sustain amplitude
 		float s;
-		// once note is released, time it takes for signal to decay to 0.
+		// once note is released, time it takes for signal to decay to its release level.
 		float r;
+		// level at t=infinity. Usually 0 when the envelope represents amplitude, but has uses in detune/filter envelopes
+		float releaseLevel;
 		// used to (externally) multiply the a, d and r values by (1+scaleByPartialIdx*p)
 		float scaleByPartialIdx;
 	public:
-		ADSR(float a = 0.f, float d = 0.f, float s = 0.f, float r = 0.f, float scaleByPartialIdx=0.f)
-			: a(a), d(d), s(s), r(r), scaleByPartialIdx(scaleByPartialIdx) {}
+		ADSR()
+		: startLevel(0), a(0), peakLevel(1), d(0), s(0), r(0), releaseLevel(0), scaleByPartialIdx(0) {}
+		inline void setStartLevel(float level) {
+			this->startLevel = level;
+		}
 		inline void setAttack(float attack) {
 			this->a = attack;
+		}
+		inline void setPeakLevel(float level) {
+			this->peakLevel = level;
 		}
 		inline void setDecay(float decay) {
 			this->d = decay;
@@ -31,14 +42,23 @@ namespace kernel {
 		inline void setRelease(float release) {
 			this->r = release;
 		}
+		inline void setReleaseLevel(float level) {
+			this->releaseLevel = level;
+		}
 		inline void setScaleByPartialIdx(float s) {
 			this->scaleByPartialIdx = s;
+		}
+		inline HOST DEVICE float getStartLevel() const {
+			return startLevel;
 		}
 		inline HOST DEVICE float getAttack() const {
 			return a;
 		}
 		inline HOST DEVICE float getAttackFor(unsigned partialIdx) const {
 			return a * getTimeScaleFor(partialIdx);
+		}
+		inline HOST DEVICE float getPeakLevel() const {
+			return peakLevel;
 		}
 		inline HOST DEVICE float getDecay() const {
 			return d;
@@ -55,6 +75,9 @@ namespace kernel {
 		inline HOST DEVICE float getReleaseFor(unsigned partialIdx) const {
 			return r * getTimeScaleFor(partialIdx);
 		}
+		inline HOST DEVICE float getReleaseLevel() const {
+			return releaseLevel;
+		}
 		inline HOST DEVICE float getScaleByPartialIdx() const {
 			return scaleByPartialIdx;
 		}
@@ -67,7 +90,7 @@ namespace kernel {
 		float lfoFreq;
 		float lfoDepth;
 	public:
-		LFO(float lfoFreq=0.f, float lfoDepth=0.f) : lfoFreq(lfoFreq), lfoDepth(lfoDepth) {}
+		LFO() : lfoFreq(0.f), lfoDepth(0.f) {}
 		inline void setLfoFreq(float w) {
 			lfoFreq = w;
 		}
