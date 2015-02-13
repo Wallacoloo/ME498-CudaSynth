@@ -31,8 +31,19 @@ namespace kernel {
 		__device__ __host__ F imag() const {
 			return _i;
 		}
+		__device__ __host__ F magSq() const {
+			return _r*_r + _i*_i;
+		}
 		__device__ __host__ F mag() const {
-			return sqrtf(_r*_r + _i*_i);
+			return sqrtf(magSq());
+		}
+		__device__ __host__ F phase() const {
+			return atan2(_i, _r);
+		}
+		__device__ __host__ ComplexT inverse() const {
+			// return 1.0/(this)
+			// 1 / (a+b*i) = (a-b*i) / (a^2+b^2)
+			return ComplexT(_r, -_i) / magSq();
 		}
 		__device__ __host__ ComplexT operator+(const ComplexT &other) const {
 			return ComplexT(_r + other._r, _i + other._i);
@@ -45,8 +56,32 @@ namespace kernel {
 			// = (ac-bd) + (ad+bc)i;
 			return ComplexT(_r*other._r - _i*other._i, _r*other._i + _i*other._r);
 		}
+		__device__ __host__ ComplexT operator*(F other) const {
+			return (*this) * ComplexT(other, 0);
+		}
+		__device__ __host__ ComplexT operator/(const ComplexT &other) const {
+			return (*this) * other.inverse();
+		}
+		__device__ __host__ ComplexT operator/(F other) const {
+			return (*this) * (1.f / other);
+		}
 		__device__ __host__ ComplexT& operator*=(const ComplexT &other) {
 			return (*this = (*this * other));
+		}
+		__device__ __host__ ComplexT& operator*=(F other)  {
+			return (*this) *= ComplexT(other, 0);
+		}
+		__device__ __host__ ComplexT& operator/=(const ComplexT &other) {
+			return (*this) *= other.inverse();
+		}
+		__device__ __host__ ComplexT& operator/=(F other) {
+			return (*this) *= (1.f / other);
+		}
+		__device__ __host__ ComplexT pow(F n) {
+			//(r*e^(i*phase))^n = r^n*e^(i*n*phase)
+			F newMag = powf(mag(), n);
+			F newPhase = powf(phase(), n);
+			return ComplexT(newPhase)*newMag;
 		}
 	};
 
@@ -78,14 +113,24 @@ namespace kernel {
 			phaseDoublePrime = PhaseT(1, 0);
 			// phasePrimeStart * doublePrime^BUFFER_BLOCK_SIZE = phasePrimeEnd
 			// (phasePrimeEnd/phasePrimeStart)^(1.0/BUFFER_BLOCK_SIZE) = doublePrime
-			// phaseDoublePrime = PhaseT(powf(wEnd / wStart, 1.0 / BUFFER_BLOCK_SIZE));
+			// phaseDoublePrime = PhaseT(powf(phasePrimeEnd/phasePrimeStart, 1.0 / BUFFER_BLOCK_SIZE));
+			// Note: (a+bi)^n = (r*e^(i*p))^n = r^n*e^(i*n*p)
+			// phaseDoublePrime = (phasePrimeEnd / phasePrimeEnd).pow(1.0 / BUFFER_BLOCK_SIZE);
 		}
 		__device__ __host__ void newFrequency(float frequency) {
 			newFrequency(frequency, frequency);
 		}
 		__device__ __host__ void newDepth(float depth) {
 			// make the current magnitude match the desired depth
-			phase *= depth / phase.mag();
+			// we must avoid the division by zero if the current depth is 0.
+			// to avoid this, we just prevent the current depth from ever *being* zero. 
+			// In this way, we also don't lose track of position when the depth is toggled to 0,
+			// but there will always be some *small* component of LFO influencing things.
+			depth = max(0.0001, depth);
+			float mag = phase.mag();
+			// float mag = max(0.0001, phase.mag());
+			float factor = depth / mag;
+			phase *= factor;
 		}
 		__device__ __host__ PhaseT next() {
 			phasePrime *= phaseDoublePrime;
@@ -427,10 +472,13 @@ namespace kernel {
 		myState->atBlockStart(voiceState, partialIdx, fundamentalFreq, released);
 		for (int sampleIdx = 0; sampleIdx < BUFFER_BLOCK_SIZE; ++sampleIdx) {
 			float outputL, outputR;
-			float sinusoid = myState->sinusoid.next().imag(); // Extract the sinusoidal portion of the wave.
-			float amplitude = (1.0 / NUM_PARTIALS) * voiceState->parameterInfo.start.partialLevels[partialIdx];
-			amplitude *= myState->volumeEnvelope.next();
-			outputL = outputR = amplitude*sinusoid;
+			// Extract the sinusoidal portion of the wave.
+			float sinusoid = myState->sinusoid.next().imag();
+			// Get the base partial level (the hand-drawn frequency weights)
+			float level = (1.0 / NUM_PARTIALS) * voiceState->parameterInfo.start.partialLevels[partialIdx];
+			// Get the ADSR/LFO volume envelope
+			float envelope = myState->volumeEnvelope.next();
+			outputL = outputR = level*envelope*sinusoid;
 
 			reduceOutputs(voiceState, partialIdx, baseIdx + sampleIdx, outputL, outputR);
 			updateVoiceParametersIfNeeded(voiceState, voiceNum, partialIdx);
@@ -448,17 +496,19 @@ namespace kernel {
 		computePartialOutput(synthState, voiceNum, baseIdx, partialNum, fundamentalFreq, released);
 	}
 
-	__host__ void evaluateSynthVoiceBlockOnCpu(float *bufferB, unsigned voiceNum, unsigned sampleIdx, float fundamentalFreq, bool released) {
+	__host__ void evaluateSynthVoiceBlockOnCpu(float bufferB[BUFFER_BLOCK_SIZE*NUM_CH], unsigned voiceNum, unsigned sampleIdx, float fundamentalFreq, bool released) {
 		// need to obtain a lock on the synth state
 		std::unique_lock<std::mutex> stateLock(synthStateMutex);
+		// move pointer to d_synthState into a local for easy debugging
+		SynthState *synthState = d_synthState;
 		for (int partialIdx = 0; partialIdx < NUM_PARTIALS; ++partialIdx) {
-			computePartialOutput(d_synthState, voiceNum, sampleIdx, partialIdx, fundamentalFreq, released);
+			computePartialOutput(synthState, voiceNum, sampleIdx, partialIdx, fundamentalFreq, released);
 		}
 		unsigned bufferStartIdx = NUM_CH * (sampleIdx % CIRCULAR_BUFFER_LEN);
-		memcpy(bufferB, &d_synthState->voiceStates[voiceNum].sampleBuffer[bufferStartIdx], BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float));
+		memcpy(bufferB, &synthState->voiceStates[voiceNum].sampleBuffer[bufferStartIdx], BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float));
 	}
 
-	__host__ void evaluateSynthVoiceBlockCuda(float *bufferB, unsigned voiceNum, unsigned sampleIdx, float fundamentalFreq, bool released) {
+	__host__ void evaluateSynthVoiceBlockCuda(float bufferB[BUFFER_BLOCK_SIZE*NUM_CH], unsigned voiceNum, unsigned sampleIdx, float fundamentalFreq, bool released) {
 		evaluateSynthVoiceBlockKernel << <1, NUM_PARTIALS >> >(d_synthState, voiceNum, sampleIdx, fundamentalFreq, released);
 
 		checkCudaError(cudaGetLastError()); //check if error in kernel launch
