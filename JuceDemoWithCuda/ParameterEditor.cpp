@@ -1,7 +1,7 @@
 #include "ParameterEditor.h"
 #include "PluginEditor.h"
 
-ParameterEditor::ParameterEditor(PluginEditor *editor, int nSliders, const char** labelNames)
+ParameterEditor::ParameterEditor(PluginEditor *editor, int nSliders, const char** labelNames, const float parameterBounds[][2])
 	: editor(editor), nSliders(nSliders), sliders(new Slider[nSliders]), labels(new Label[nSliders])
 {
 	for (int i = 0; i < nSliders; ++i) {
@@ -9,8 +9,7 @@ ParameterEditor::ParameterEditor(PluginEditor *editor, int nSliders, const char*
 		sliders[i].setTextBoxStyle(Slider::NoTextBox, false, 0, 0);
 		addAndMakeVisible(sliders[i]);
 		sliders[i].addListener(this);
-		sliders[i].setRange(0.f, 1.f, 0.f);
-
+		sliders[i].setRange(parameterBounds[i][0], parameterBounds[i][1], 0.f);
 		addAndMakeVisible(labels[i]);
 		labels[i].setFont(Font(11.f));
 		labels[i].setText(labelNames[i], sendNotification);

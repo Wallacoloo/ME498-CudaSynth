@@ -17,7 +17,7 @@ class ParameterEditor :
 	//Slider attackSlider, decaySlider, sustainSlider, releaseSlider, stretchSlider;
 	//Label attackLabel, decayLabel, sustainLabel, releaseLabel, stretchLabel;
 public:
-	ParameterEditor(PluginEditor *editor, int nSliders, const char** labelNames);
+	ParameterEditor(PluginEditor *editor, int nSliders, const char** labelNames, const float parameterBounds[][2]);
 	~ParameterEditor();
 	void sliderValueChanged(Slider*) override;
 	void resized() override;

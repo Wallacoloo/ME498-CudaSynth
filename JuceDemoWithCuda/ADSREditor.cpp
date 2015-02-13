@@ -1,9 +1,10 @@
 #include "ADSREditor.h"
 
 static const char* labelNames[] = { "A", "D", "S", "R", "Stretch" };
+static const float parameterBounds[][2] = { { 0, 2 }, { 0, 2 }, { 0, 1 }, { 0, 2 }, { -0.8, 5.0 } };
 
 ADSREditor::ADSREditor(PluginEditor *editor, ADSR *adsr)
-	: ParameterEditor(editor, 5, labelNames), adsr(adsr) {
+	: ParameterEditor(editor, 5, labelNames, parameterBounds), adsr(adsr) {
 }
 
 
