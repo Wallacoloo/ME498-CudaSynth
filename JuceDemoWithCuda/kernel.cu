@@ -80,7 +80,7 @@ namespace kernel {
 		__device__ __host__ ComplexT pow(F n) {
 			//(r*e^(i*phase))^n = r^n*e^(i*n*phase)
 			F newMag = powf(mag(), n);
-			F newPhase = powf(phase(), n);
+			F newPhase = phase()*n;
 			return ComplexT(newPhase)*newMag;
 		}
 	};
@@ -104,33 +104,42 @@ namespace kernel {
 		PhaseT phaseDoublePrime;
 	public:
 		Sinuisoidal() : phase(1, 0) {}
-		__device__ __host__ void newFrequency(float start, float end) {
-			float wStart = INV_SAMPLE_RATE * start;
-			float wEnd = INV_SAMPLE_RATE * end;
+		// transition from start frequency to end frequency over this block
+		__device__ __host__ void newFrequencyAndDepth(float startFreq, float endFreq, float startDepth, float endDepth) {
+			float wStart = INV_SAMPLE_RATE * startFreq;
+			float wEnd = INV_SAMPLE_RATE * endFreq;
 			PhaseT phasePrimeStart = PhaseT(wStart);
 			PhaseT phasePrimeEnd = PhaseT(wEnd);
 			phasePrime = phasePrimeStart;
-			phaseDoublePrime = PhaseT(1, 0);
 			// phasePrimeStart * doublePrime^BUFFER_BLOCK_SIZE = phasePrimeEnd
 			// (phasePrimeEnd/phasePrimeStart)^(1.0/BUFFER_BLOCK_SIZE) = doublePrime
 			// phaseDoublePrime = PhaseT(powf(phasePrimeEnd/phasePrimeStart, 1.0 / BUFFER_BLOCK_SIZE));
 			// Note: (a+bi)^n = (r*e^(i*p))^n = r^n*e^(i*n*p)
-			// phaseDoublePrime = (phasePrimeEnd / phasePrimeEnd).pow(1.0 / BUFFER_BLOCK_SIZE);
-		}
-		__device__ __host__ void newFrequency(float frequency) {
-			newFrequency(frequency, frequency);
-		}
-		__device__ __host__ void newDepth(float depth) {
-			// make the current magnitude match the desired depth
+			if (wStart > 0.000001) {
+				// check for small phasePrimeStart to avoid division by near-zero
+				phaseDoublePrime = (phasePrimeEnd / phasePrimeStart).pow(1.f / BUFFER_BLOCK_SIZE);
+			} else {
+				phaseDoublePrime = PhaseT(1, 0);
+			}
+
 			// we must avoid the division by zero if the current depth is 0.
-			// to avoid this, we just prevent the current depth from ever *being* zero. 
-			// In this way, we also don't lose track of position when the depth is toggled to 0,
-			// but there will always be some *small* component of LFO influencing things.
-			depth = max(0.0001, depth);
+			// to avoid this, we just prevent the desired depth from ever *being* zero. 
+			// In this way, we also don't lose track of position when the depth is toggled to 0
+			//   at the cost of some small inaccuracies under specific conditions
+			startDepth = max(0.0001, startDepth);
+			endDepth = max(0.0001, endDepth);
+			// We cannot transition from startDepth to endDepth linearly,
+			//   instead we multiply phase by some scalar each frame.
+			// so, mag(frame) = startDepth * k^frame
+			// and mag(b=BUFFER_BLOCK_SIZE) = endDepth
+			// endDepth = startDepth *k^b
+			// (endDepth/startDepth)^(1/b) = k
+			float k = powf(endDepth / startDepth, 1.f / BUFFER_BLOCK_SIZE);
+			// make current phase magnitude equal to startDepth
 			float mag = phase.mag();
-			// float mag = max(0.0001, phase.mag());
-			float factor = depth / mag;
+			float factor = startDepth / mag;
 			phase *= factor;
+			phasePrime *= k;
 		}
 		__device__ __host__ PhaseT next() {
 			phasePrime *= phaseDoublePrime;
@@ -294,11 +303,28 @@ namespace kernel {
 	};
 
 	class LFOState {
+		ADSRState freqAdsrState;
+		ADSRState depthAdsrState;
 		Sinuisoidal sinusoid;
 	public:
-		__device__ __host__ void atBlockStart(LFO *start, LFO *end, unsigned partialIdx) {
-			sinusoid.newFrequency(start->getLfoFreqFor(partialIdx));
-			sinusoid.newDepth(start->getLfoDepthFor(partialIdx));
+		__device__ __host__ void atBlockStart(LFO *start, LFO *end, unsigned partialIdx, bool released) {
+			ADSR *freqAdsrStart =  start->getFreqAdsr();
+			ADSR *depthAdsrStart = start->getDepthAdsr();
+			ADSR *freqAdsrEnd =    end->getFreqAdsr();
+			ADSR *depthAdsrEnd =   end->getDepthAdsr();
+			// update the ADSR states
+			freqAdsrState.atBlockStart(freqAdsrStart, freqAdsrEnd, partialIdx, released);
+			depthAdsrState.atBlockStart(depthAdsrStart, depthAdsrEnd, partialIdx, released);
+			// obtain the starting and ending frequency and depth.
+			// We will then just linearly interpolate over the block.
+			float startFreq = freqAdsrState.next();
+			float startDepth = depthAdsrState.next();
+			float endFreq, endDepth;
+			for (int i = 1; i < BUFFER_BLOCK_SIZE; ++i) {
+				endFreq = freqAdsrState.next();
+				endDepth = depthAdsrState.next();
+			}
+			sinusoid.newFrequencyAndDepth(startFreq, endFreq, startDepth, endDepth);
 		}
 		__device__ __host__ float next() {
 			return sinusoid.next().imag();
@@ -311,7 +337,7 @@ namespace kernel {
 	public:
 		__device__ __host__ void atBlockStart(ADSRLFOEnvelope *envStart, ADSRLFOEnvelope *envEnd, unsigned partialIdx, bool released) {
 			adsr.atBlockStart(envStart->getAdsr(), envEnd->getAdsr(), partialIdx, released);
-			lfo.atBlockStart(envStart->getLfo(), envEnd->getLfo(), partialIdx);
+			lfo.atBlockStart(envStart->getLfo(), envEnd->getLfo(), partialIdx, released);
 		}
 		__device__ __host__ float next() {
 			return adsr.next() * (1 + lfo.next());
@@ -348,7 +374,7 @@ namespace kernel {
 	};
 
 	void PartialState::atBlockStart(struct SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq, bool released) {
-		sinusoid.newFrequency((partialIdx + 1)*fundamentalFreq);
+		sinusoid.newFrequencyAndDepth((partialIdx + 1)*fundamentalFreq, (partialIdx + 1)*fundamentalFreq, 1.f, 1.f);
 		volumeEnvelope.atBlockStart(&voiceState->parameterInfo.start.volumeEnvelope, &voiceState->parameterInfo.end.volumeEnvelope, partialIdx, released);
 	}
 

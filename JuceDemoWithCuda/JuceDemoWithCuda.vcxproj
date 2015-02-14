@@ -249,7 +249,6 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     <ClCompile Include="JuceLibraryCode\modules\juce_graphics\juce_graphics.cpp" />
     <ClCompile Include="JuceLibraryCode\modules\juce_gui_basics\juce_gui_basics.cpp" />
     <ClCompile Include="JuceLibraryCode\modules\juce_gui_extra\juce_gui_extra.cpp" />
-    <ClCompile Include="LFOEditor.cpp" />
     <ClCompile Include="ParameterEditor.cpp" />
     <ClCompile Include="PartialLevelsComponent.cpp" />
     <ClCompile Include="PluginEditor.cpp" />
@@ -260,7 +259,6 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     <ClInclude Include="ADSREditor.h" />
     <ClInclude Include="defines.h" />
     <ClInclude Include="kernel.h" />
-    <ClInclude Include="LFOEditor.h" />
     <ClInclude Include="ParameterEditor.h" />
     <ClInclude Include="PartialLevelsComponent.h" />
   </ItemGroup>

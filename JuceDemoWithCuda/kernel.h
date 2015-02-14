@@ -87,21 +87,21 @@ namespace kernel {
 	};
 
 	class LFO {
-		float lfoFreq;
-		float lfoDepth;
+		ADSR lfoFreq;
+		ADSR lfoDepth;
 	public:
-		LFO() : lfoFreq(0.f), lfoDepth(0.f) {}
-		inline void setLfoFreq(float w) {
-			lfoFreq = w;
+		LFO() : lfoFreq(), lfoDepth() {}
+		inline HOST DEVICE const ADSR* getFreqAdsr() const {
+			return &lfoFreq;
 		}
-		inline void setLfoDepth(float d) {
-			lfoDepth = d;
+		inline HOST DEVICE ADSR* getFreqAdsr() {
+			return &lfoFreq;
 		}
-		inline HOST DEVICE float getLfoFreqFor(unsigned partialIdx) const {
-			return lfoFreq;
+		inline HOST DEVICE const ADSR* getDepthAdsr() const {
+			return &lfoDepth;
 		}
-		inline HOST DEVICE float getLfoDepthFor(unsigned partialIdx) const {
-			return lfoDepth;
+		inline HOST DEVICE ADSR* getDepthAdsr() {
+			return &lfoDepth;
 		}
 	};
 

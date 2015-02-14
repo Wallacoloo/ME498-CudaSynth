@@ -7,12 +7,14 @@ PluginEditor::PluginEditor(PluginProcessor& owner)
       midiKeyboard (owner.keyboardState, MidiKeyboardComponent::horizontalKeyboard),
 	  partialLevelsComponent(this, parameterStates.partialLevels),
 	  volumeADSR(this, parameterStates.volumeEnvelope.getAdsr()),
-	  volumeLFO(this, parameterStates.volumeEnvelope.getLfo())
+	  volumeLFOFreq(this, parameterStates.volumeEnvelope.getLfo()->getFreqAdsr()),
+	  volumeLFODepth(this, parameterStates.volumeEnvelope.getLfo()->getDepthAdsr())
 {
 	// add the parameter editors
 	addAndMakeVisible(partialLevelsComponent);
 	addAndMakeVisible(volumeADSR);
-	addAndMakeVisible(volumeLFO);
+	addAndMakeVisible(volumeLFOFreq);
+	addAndMakeVisible(volumeLFODepth);
 
     // add the midi keyboard component
     addAndMakeVisible (midiKeyboard);
@@ -51,10 +53,14 @@ void PluginEditor::resized()
 	Rectangle<int> volBounds = volumeADSR.getLocalBounds();
 	volBounds.setPosition(144, 56);
 	volumeADSR.setBounds(volBounds);
-	// take volumeLFO's desired size and position it to the right of the ADSR
-	Rectangle<int> lfoBounds = volumeLFO.getLocalBounds();
-	lfoBounds.setPosition(volBounds.getTopRight());
-	volumeLFO.setBounds(lfoBounds);
+	// take volumeLFOFreq's desired size and position it to the right of the ADSR
+	Rectangle<int> lfoFreqBounds = volumeLFOFreq.getLocalBounds();
+	lfoFreqBounds.setPosition(volBounds.getTopRight());
+	volumeLFOFreq.setBounds(lfoFreqBounds);
+	// take volumeLFODepths's desired size and position it to the right of the LFOFreq
+	Rectangle<int> lfoDepthBounds = volumeLFODepth.getLocalBounds();
+	lfoDepthBounds.setPosition(lfoFreqBounds.getTopRight());
+	volumeLFODepth.setBounds(lfoDepthBounds);
 
     resizer->setBounds (getWidth() - 16, getHeight() - 16, 16, 16);
 

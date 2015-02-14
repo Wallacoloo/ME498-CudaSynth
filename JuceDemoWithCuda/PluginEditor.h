@@ -15,7 +15,6 @@
 #include "PluginProcessor.h"
 #include "PartialLevelsComponent.h"
 #include "ADSREditor.h"
-#include "LFOEditor.h"
 #include "kernel.h"
 
 
@@ -39,8 +38,7 @@ private:
 	ParameterStates parameterStates;
     MidiKeyboardComponent midiKeyboard;
 	PartialLevelsComponent partialLevelsComponent;
-	ADSREditor volumeADSR;
-	LFOEditor volumeLFO;
+	ADSREditor volumeADSR, volumeLFOFreq, volumeLFODepth;
     ScopedPointer<ResizableCornerComponent> resizer;
     ComponentBoundsConstrainer resizeLimits;
 
