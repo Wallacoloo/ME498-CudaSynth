@@ -8,16 +8,23 @@ PluginEditor::PluginEditor(PluginProcessor& owner)
 	  partialLevelsComponent(this, parameterStates.partialLevels),
 	  volumeADSR(this, parameterStates.volumeEnvelope.getAdsr(), "Volume", ADSREditor::ClassicKnobs, ADSREditor::NormalizedDepthLimits),
 	  volumeLFOFreq(this, parameterStates.volumeEnvelope.getLfo()->getFreqAdsr(), "LFO Freq", ADSREditor::AsrWithPeaksKnobs, ADSREditor::LFOFrequencyLimits),
-	  volumeLFODepth(this, parameterStates.volumeEnvelope.getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimits),
+	  volumeLFODepth(this, parameterStates.volumeEnvelope.getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimitsPlusOrMinus),
+	  stereoADSR(this, parameterStates.stereoPanEnvelope.getAdsr(), "Stereo Pan", ADSREditor::ClassicKnobs, ADSREditor::NormalizedDepthLimitsPlusOrMinus),
+	  stereoLFOFreq(this, parameterStates.stereoPanEnvelope.getLfo()->getFreqAdsr(), "LFO Freq", ADSREditor::AsrWithPeaksKnobs, ADSREditor::LFOFrequencyLimits),
+	  stereoLFODepth(this, parameterStates.stereoPanEnvelope.getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimitsPlusOrMinus),
 	  detuneADSR(this, parameterStates.detuneEnvelope.getAdsrLfo()->getAdsr(), "Detune", ADSREditor::ClassicKnobs, ADSREditor::NormalizedDepthLimits),
 	  detuneLFOFreq(this, parameterStates.detuneEnvelope.getAdsrLfo()->getLfo()->getFreqAdsr(), "LFO Freq", ADSREditor::AsrWithPeaksKnobs, ADSREditor::LFOFrequencyLimits),
-	  detuneLFODepth(this, parameterStates.detuneEnvelope.getAdsrLfo()->getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimits)
+	  detuneLFODepth(this, parameterStates.detuneEnvelope.getAdsrLfo()->getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimitsPlusOrMinus)
+
 {
 	// add the parameter editors
 	addAndMakeVisible(partialLevelsComponent);
 	addAndMakeVisible(volumeADSR);
 	addAndMakeVisible(volumeLFOFreq);
 	addAndMakeVisible(volumeLFODepth);
+	addAndMakeVisible(stereoADSR);
+	addAndMakeVisible(stereoLFOFreq);
+	addAndMakeVisible(stereoLFODepth);
 	addAndMakeVisible(detuneADSR);
 	addAndMakeVisible(detuneLFOFreq);
 	addAndMakeVisible(detuneLFODepth);
@@ -56,10 +63,11 @@ void PluginEditor::resized()
 
 	int padding = 6;
 	ADSREditor* volumeEditors[] = { &volumeADSR, &volumeLFOFreq, &volumeLFODepth };
+	ADSREditor* stereoEditors[] = { &stereoADSR, &stereoLFOFreq, &stereoLFODepth };
 	ADSREditor* detuneEditors[] = { &detuneADSR, &detuneLFOFreq, &detuneLFODepth };
-	Point<int> editorStartPoints[] = { Point<int>(144, 30), Point<int>(4, 120) };
-	ADSREditor** editors[] = { volumeEditors, detuneEditors };
-	for (int row = 0; row < 2; ++row) {
+	Point<int> editorStartPoints[] = { Point<int>(144, 30), Point<int>(4, 120), Point<int>(4, 210) };
+	ADSREditor** editors[] = { volumeEditors, stereoEditors, detuneEditors };
+	for (int row = 0; row < 3; ++row) {
 		Point<int> curPos = editorStartPoints[row];
 		for (int i = 0; i < 3; ++i) {
 			ADSREditor *cur = editors[row][i];

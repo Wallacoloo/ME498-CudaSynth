@@ -119,6 +119,8 @@ namespace kernel {
 
 	class DetuneEnvelope {
 		float randSeed;
+		// amount of randomness to be mixed in
+		float randMix;
 		ADSRLFOEnvelope adsrLfo;
 	public:
 		inline HOST DEVICE ADSRLFOEnvelope* getAdsrLfo() {
@@ -135,6 +137,7 @@ namespace kernel {
 		// hand-drawn partial envelopes
 		float partialLevels[NUM_PARTIALS];
 		ADSRLFOEnvelope volumeEnvelope;
+		ADSRLFOEnvelope stereoPanEnvelope;
 		DetuneEnvelope detuneEnvelope;
 	};
 

@@ -16,8 +16,9 @@ public:
 		AsrWithPeaksKnobs, // attack, startLevel, (no decay or peak), sustain, release, endLevel, stretchByFreq
 	};
 	enum KnobLimits {
-		NormalizedDepthLimits,
-		LFOFrequencyLimits,
+		NormalizedDepthLimits, // ADSR should have bounds [0, 1]
+		NormalizedDepthLimitsPlusOrMinus, // ADSR should have bounds [-1, 1]
+		LFOFrequencyLimits, //ADSR should have bounds[0, frequency limit]
 	};
 	ADSREditor(PluginEditor *editor, ADSR *adsr, const char* editorLabel, KnobTypes knobTypes, KnobLimits knobLimits);
 	~ADSREditor();

@@ -39,6 +39,7 @@ private:
     MidiKeyboardComponent midiKeyboard;
 	PartialLevelsComponent partialLevelsComponent;
 	ADSREditor volumeADSR, volumeLFOFreq, volumeLFODepth;
+	ADSREditor stereoADSR, stereoLFOFreq, stereoLFODepth;
 	ADSREditor detuneADSR, detuneLFOFreq, detuneLFODepth;
     ScopedPointer<ResizableCornerComponent> resizer;
     ComponentBoundsConstrainer resizeLimits;

@@ -22,6 +22,8 @@
 #define SAMPLE_RATE 44100
 #define INV_SAMPLE_RATE (1.f/44100.f)
 
+#define PI 3.14159265358979323846
+
 
 
 // Expose conveniences:

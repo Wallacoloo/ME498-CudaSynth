@@ -215,6 +215,15 @@ namespace kernel {
 			float endRelease =        end->getReleaseFor(partialIdx);
 			float endReleaseLevel =   end->getReleaseLevel();
 			float beginReleaseLevelStart, beginReleaseLevelEnd;
+			// handle cases where there is no attack or decay without introducing impulses
+			if (mode == AttackMode && startAttack == 0.f) {
+				value = startPeakLevel;
+				mode = DecayMode;
+			}
+			if (mode == DecayMode && startDecay == 0.f) {
+				value = startSustain;
+				mode = SustainMode;
+			}
 			if (released && mode != ReleaseMode) {
 				mode = ReleaseMode;
 				// release starts from current value
@@ -380,6 +389,7 @@ namespace kernel {
 	struct PartialState {
 		Sinusoidal sinusoid;
 		ADSRLFOEnvelopeState volumeEnvelope;
+		ADSRLFOEnvelopeState stereoPanEnvelope;
 		DetuneEnvelopeState detuneEnvelope;
 		PartialState() {}
 		PartialState(struct SynthState *synthState, unsigned voiceNum, unsigned partialIdx) {}
@@ -411,6 +421,7 @@ namespace kernel {
 		// configure the sinusoid to transition from the starting frequency to the end frequency
 		sinusoid.newFrequencyAndDepth(baseFreq*(1.f+detuneStart), baseFreq*(1.f+detuneEnd), 1.f, 1.f);
 		volumeEnvelope.atBlockStart(&startParams->volumeEnvelope, &endParams->volumeEnvelope, partialIdx, released);
+		stereoPanEnvelope.atBlockStart(&startParams->stereoPanEnvelope, &endParams->stereoPanEnvelope, partialIdx, released);
 	}
 
 	// When summing the outputs at a specific frame for each partial, we use a reduction method.
@@ -551,15 +562,40 @@ namespace kernel {
 		SynthVoiceState *voiceState = &synthState->voiceStates[voiceNum];
 		PartialState* myState = &voiceState->partialStates[partialIdx];
 		myState->atBlockStart(voiceState, partialIdx, fundamentalFreq, released);
+		// Get the base partial level (the hand-drawn frequency weights)
+		float level = (1.0 / NUM_PARTIALS) * voiceState->parameterInfo.start.partialLevels[partialIdx];
 		for (int sampleIdx = 0; sampleIdx < BUFFER_BLOCK_SIZE; ++sampleIdx) {
-			float outputL, outputR;
 			// Extract the sinusoidal portion of the wave.
 			float sinusoid = myState->sinusoid.next().imag();
-			// Get the base partial level (the hand-drawn frequency weights)
-			float level = (1.0 / NUM_PARTIALS) * voiceState->parameterInfo.start.partialLevels[partialIdx];
 			// Get the ADSR/LFO volume envelope
 			float envelope = myState->volumeEnvelope.nextAsProduct();
-			outputL = outputR = level*envelope*sinusoid;
+			float pan = myState->stereoPanEnvelope.nextAsSum();
+			float unpanned = level*envelope*sinusoid;
+			// full left = -1 pan. full right = +1 pan.
+			// Use circular panning, where L^2 + R^2 = 1.0
+			//   R(+1.0 pan) = 1.0, L(-1.0 pan) = 0.0, R(0.0 pan) = sqrt(1/2)
+			//   L(+1.0 pan) = 0.0, L(-1.0 pan) = 1.0, L(0.0 pan) = sqrt(1/2)
+			//   then R(pan) = sqrt((1+pan)/2)
+			//   L(pan) = sqrt((1-pan)/2)
+			// Note that L(pan)^2 + R(pan)^2 = 1.0, so energy is constant.
+			// Must deal with pan values of magnitude > 1.0
+			// Note the analog between sinusoidals:
+			// sin(x)^2 + cos(x)^2 = 1.0 = L(pan)^2 + R(pan)^2
+			// sin(pi/4) = cos(pi/4) = L(0.0) = R(0.0) = sqrt(1/2)
+			// cos(0.0) = L(-1.0) = 1.0
+			// cos(pi/2) = L(1.0) = 0.0
+			// sin(0.0) = R(-1.0) = 0.0
+			// sin(pi/2) = R(1.0) = 1.0
+			// So, L(pan) = cos(pi/4 + pi/4*pan) = cos(pi/4*(1+pan))
+			//     R(pan) = sin(pi/4 + pi/4*pan) = sin(pi/4*(1+pan))
+			float angle = PI / 4 * (1 + pan);
+			float outputL = unpanned * cosf(angle);
+			float outputR = unpanned * sinf(angle);
+			//float outputL = unpanned * sqrt(0.5*(1-pan));
+			//float outputR = unpanned * sqrt(0.5*(1+pan));
+			//linear pan implementation:
+			//float outputL = unpanned * 0.5*(1 - pan);
+			//float outputR = unpanned * 0.5*(1 + pan);
 
 			reduceOutputs(voiceState, partialIdx, baseIdx + sampleIdx, outputL, outputR);
 			updateVoiceParametersIfNeeded(voiceState, voiceNum, partialIdx);
