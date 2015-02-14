@@ -6,9 +6,9 @@ PluginEditor::PluginEditor(PluginProcessor& owner)
     : AudioProcessorEditor (owner),
       midiKeyboard (owner.keyboardState, MidiKeyboardComponent::horizontalKeyboard),
 	  partialLevelsComponent(this, parameterStates.partialLevels),
-	  volumeADSR(this, parameterStates.volumeEnvelope.getAdsr(), "Volume"),
-	  volumeLFOFreq(this, parameterStates.volumeEnvelope.getLfo()->getFreqAdsr(), "LFO Freq"),
-	  volumeLFODepth(this, parameterStates.volumeEnvelope.getLfo()->getDepthAdsr(), "LFO Depth")
+	  volumeADSR(this, parameterStates.volumeEnvelope.getAdsr(), "Volume", ADSREditor::Classic),
+	  volumeLFOFreq(this, parameterStates.volumeEnvelope.getLfo()->getFreqAdsr(), "LFO Freq", ADSREditor::AsrWithPeaks),
+	  volumeLFODepth(this, parameterStates.volumeEnvelope.getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaks)
 {
 	// add the parameter editors
 	addAndMakeVisible(partialLevelsComponent);
