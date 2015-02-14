@@ -1,11 +1,12 @@
 #include "LFOEditor.h"
 
 static const char* labelNames[] = { "Freq", "Depth" };
-static const float parameterBounds[][2] = { { 0, 20 }, { 0, 1 } };
+static const float parameterBounds[][2] = { { 0, 100 }, { 0, 1 } };
+static const int usableParameterIndices[] = { 0, 1 , -1};
 
 
 LFOEditor::LFOEditor(PluginEditor *editor, LFO *lfo)
-	: ParameterEditor(editor, 2, labelNames, parameterBounds), lfo(lfo) {
+	: ParameterEditor(editor, labelNames, parameterBounds, usableParameterIndices), lfo(lfo) {
 }
 
 

@@ -13,11 +13,11 @@ class ParameterEditor :
 	int nSliders;
 	Slider *sliders;
 	Label *labels;
-	//ADSR *adsr;
-	//Slider attackSlider, decaySlider, sustainSlider, releaseSlider, stretchSlider;
-	//Label attackLabel, decayLabel, sustainLabel, releaseLabel, stretchLabel;
+	// maps the slider index i to the parameter index j
+	// i.e. j = parameterIndexMap[i]
+	const int *parameterIndexMap;
 public:
-	ParameterEditor(PluginEditor *editor, int nSliders, const char** labelNames, const float parameterBounds[][2]);
+	ParameterEditor(PluginEditor *editor, const char** labelNames, const float parameterBounds[][2], const int* usableParameterIndices);
 	~ParameterEditor();
 	void sliderValueChanged(Slider*) override;
 	void resized() override;

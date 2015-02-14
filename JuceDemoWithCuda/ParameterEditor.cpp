@@ -1,18 +1,27 @@
 #include "ParameterEditor.h"
 #include "PluginEditor.h"
 
-ParameterEditor::ParameterEditor(PluginEditor *editor, int nSliders, const char** labelNames, const float parameterBounds[][2])
-	: editor(editor), nSliders(nSliders), sliders(new Slider[nSliders]), labels(new Label[nSliders])
+ParameterEditor::ParameterEditor(PluginEditor *editor, const char** labelNames, const float parameterBounds[][2], const int* usableParameterIndices)
+	: editor(editor), parameterIndexMap(usableParameterIndices)
 {
-	for (int i = 0; i < nSliders; ++i) {
-		sliders[i].setSliderStyle(Slider::Rotary);
-		sliders[i].setTextBoxStyle(Slider::NoTextBox, false, 0, 0);
-		addAndMakeVisible(sliders[i]);
-		sliders[i].addListener(this);
-		sliders[i].setRange(parameterBounds[i][0], parameterBounds[i][1], 0.f);
-		addAndMakeVisible(labels[i]);
-		labels[i].setFont(Font(11.f));
-		labels[i].setText(labelNames[i], sendNotification);
+	// determine the number of sliders
+	for (nSliders = 0; usableParameterIndices[nSliders] != -1; ++nSliders) {}
+	sliders = new Slider[nSliders];
+	labels = new Label[nSliders];
+	
+	// initialize relevant sliders & labels
+	for (int usableParamsIdx = 0; usableParamsIdx < nSliders; ++usableParamsIdx) {
+		int i = usableParameterIndices[usableParamsIdx];
+		Slider *slider = &sliders[usableParamsIdx];
+		Label *label = &labels[usableParamsIdx];
+		slider->setSliderStyle(Slider::Rotary);
+		slider->setTextBoxStyle(Slider::NoTextBox, false, 0, 0);
+		addAndMakeVisible(slider);
+		slider->addListener(this);
+		slider->setRange(parameterBounds[i][0], parameterBounds[i][1], 0.f);
+		addAndMakeVisible(label);
+		label->setFont(Font(11.f));
+		label->setText(labelNames[i], sendNotification);
 	}
 	// call resized() to compute the desired bounds
 	resized();
@@ -47,7 +56,7 @@ void ParameterEditor::sliderValueChanged(Slider *slider) {
 	float value = slider->getValue();
 	for (int i = 0; i < nSliders; ++i) {
 		if (&sliders[i] == slider) {
-			onParameterChanged(i, value);
+			onParameterChanged(parameterIndexMap[i], value);
 			editor->parametersChanged();
 		}
 	}

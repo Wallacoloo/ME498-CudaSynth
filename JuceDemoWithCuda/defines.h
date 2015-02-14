@@ -5,7 +5,7 @@
 #define NUM_PARTIALS 128
 
 // The maximum number of notes that can be played simultaneously.
-#define MAX_SIMULTANEOUS_SYNTH_NOTES 1
+#define MAX_SIMULTANEOUS_SYNTH_NOTES 4
 
 //number of samples to buffer at a time.
 //larger numbers means fewer transfefs between CPU / GPU,
