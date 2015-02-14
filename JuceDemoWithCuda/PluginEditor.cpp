@@ -8,13 +8,19 @@ PluginEditor::PluginEditor(PluginProcessor& owner)
 	  partialLevelsComponent(this, parameterStates.partialLevels),
 	  volumeADSR(this, parameterStates.volumeEnvelope.getAdsr(), "Volume", ADSREditor::ClassicKnobs, ADSREditor::NormalizedDepthLimits),
 	  volumeLFOFreq(this, parameterStates.volumeEnvelope.getLfo()->getFreqAdsr(), "LFO Freq", ADSREditor::AsrWithPeaksKnobs, ADSREditor::LFOFrequencyLimits),
-	  volumeLFODepth(this, parameterStates.volumeEnvelope.getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimits)
+	  volumeLFODepth(this, parameterStates.volumeEnvelope.getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimits),
+	  detuneADSR(this, parameterStates.detuneEnvelope.getAdsrLfo()->getAdsr(), "Detune", ADSREditor::ClassicKnobs, ADSREditor::NormalizedDepthLimits),
+	  detuneLFOFreq(this, parameterStates.detuneEnvelope.getAdsrLfo()->getLfo()->getFreqAdsr(), "LFO Freq", ADSREditor::AsrWithPeaksKnobs, ADSREditor::LFOFrequencyLimits),
+	  detuneLFODepth(this, parameterStates.detuneEnvelope.getAdsrLfo()->getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimits)
 {
 	// add the parameter editors
 	addAndMakeVisible(partialLevelsComponent);
 	addAndMakeVisible(volumeADSR);
 	addAndMakeVisible(volumeLFOFreq);
 	addAndMakeVisible(volumeLFODepth);
+	addAndMakeVisible(detuneADSR);
+	addAndMakeVisible(detuneLFOFreq);
+	addAndMakeVisible(detuneLFODepth);
 
     // add the midi keyboard component
     addAndMakeVisible (midiKeyboard);
@@ -44,26 +50,27 @@ void PluginEditor::paint (Graphics& g)
 
 void PluginEditor::resized()
 {
-
     const int keyboardHeight = 70;
-    midiKeyboard.setBounds (4, getHeight() - keyboardHeight - 4, getWidth() - 8, keyboardHeight);
+
+	partialLevelsComponent.setBounds(partialLevelsComponent.getLocalBounds().translated(4, 0));
 
 	int padding = 6;
+	ADSREditor* volumeEditors[] = { &volumeADSR, &volumeLFOFreq, &volumeLFODepth };
+	ADSREditor* detuneEditors[] = { &detuneADSR, &detuneLFOFreq, &detuneLFODepth };
+	Point<int> editorStartPoints[] = { Point<int>(144, 30), Point<int>(4, 120) };
+	ADSREditor** editors[] = { volumeEditors, detuneEditors };
+	for (int row = 0; row < 2; ++row) {
+		Point<int> curPos = editorStartPoints[row];
+		for (int i = 0; i < 3; ++i) {
+			ADSREditor *cur = editors[row][i];
+			Rectangle<int> curBounds = cur->getLocalBounds();
+			curBounds.setPosition(curPos);
+			cur->setBounds(curBounds);
+			curPos = cur->getBounds().getTopRight().translated(padding, 0);
+		}
+	}
 
-	// take the volumeADSR's desired size, and offset it by what we want the location to be
-	Rectangle<int> volBounds = volumeADSR.getLocalBounds();
-	volBounds.setPosition(144, 30);
-	volumeADSR.setBounds(volBounds);
-
-	// take volumeLFOFreq's desired size and position it to the right of the ADSR
-	Rectangle<int> lfoFreqBounds = volumeLFOFreq.getLocalBounds();
-	lfoFreqBounds.setPosition(volBounds.getTopRight().translated(padding, 0));
-	volumeLFOFreq.setBounds(lfoFreqBounds);
-
-	// take volumeLFODepths's desired size and position it to the right of the LFOFreq
-	Rectangle<int> lfoDepthBounds = volumeLFODepth.getLocalBounds();
-	lfoDepthBounds.setPosition(lfoFreqBounds.getTopRight().translated(padding, 0));
-	volumeLFODepth.setBounds(lfoDepthBounds);
+	midiKeyboard.setBounds(4, getHeight() - keyboardHeight - 4, getWidth() - 8, keyboardHeight);
 
     resizer->setBounds (getWidth() - 16, getHeight() - 16, 16, 16);
 
