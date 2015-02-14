@@ -10,14 +10,16 @@ class ParameterEditor :
 	public Component, public SliderListener
 {
 	PluginEditor *editor;
+	Label editorLabel;
 	int nSliders;
 	Slider *sliders;
 	Label *labels;
 	// maps the slider index i to the parameter index j
 	// i.e. j = parameterIndexMap[i]
 	const int *parameterIndexMap;
+	void paint(Graphics&) override;
 public:
-	ParameterEditor(PluginEditor *editor, const char** labelNames, const float parameterBounds[][2], const int* usableParameterIndices);
+	ParameterEditor(PluginEditor *editor, const char* editorLabel, const char** labelNames, const float parameterBounds[][2], const int* usableParameterIndices);
 	~ParameterEditor();
 	void sliderValueChanged(Slider*) override;
 	void resized() override;

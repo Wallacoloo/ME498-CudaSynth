@@ -328,6 +328,7 @@ namespace kernel {
 			float startFreq = freqAdsrState.next();
 			float startDepth = depthAdsrState.next();
 			float endFreq, endDepth;
+			// TODO: implement a more efficient way to get the last ADSR value in a block
 			for (int i = 1; i < BUFFER_BLOCK_SIZE; ++i) {
 				endFreq = freqAdsrState.next();
 				endDepth = depthAdsrState.next();
@@ -347,11 +348,25 @@ namespace kernel {
 			adsr.atBlockStart(envStart->getAdsr(), envEnd->getAdsr(), partialIdx, released);
 			lfo.atBlockStart(envStart->getLfo(), envEnd->getLfo(), partialIdx, released);
 		}
-		__device__ __host__ float next() {
+		__device__ __host__ float nextAsProduct() {
 			return adsr.next() * (1 + lfo.next());
+		}
+		__device__ __host__ float nextAsSum() {
+			return adsr.next() + lfo.next();
 		}
 		__device__ __host__ bool isActive() const {
 			return adsr.isActive();
+		}
+	};
+
+	class DetuneEnvelopeState {
+		ADSRLFOEnvelopeState adsrLfoState;
+	public:
+		__device__ __host__ void atBlockStart(DetuneEnvelope *envStart, DetuneEnvelope *envEnd, unsigned partialIdx, bool released) {
+			adsrLfoState.atBlockStart(envStart->getAdsrLfo(), envEnd->getAdsrLfo(), partialIdx, released);
+		}
+		__device__ __host__ float next() {
+			return adsrLfoState.nextAsSum();
 		}
 	};
 
@@ -365,6 +380,7 @@ namespace kernel {
 	struct PartialState {
 		Sinusoidal sinusoid;
 		ADSRLFOEnvelopeState volumeEnvelope;
+		DetuneEnvelopeState detuneEnvelope;
 		PartialState() {}
 		PartialState(struct SynthState *synthState, unsigned voiceNum, unsigned partialIdx) {}
 		__device__ __host__ void atBlockStart(struct SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq, bool released);
@@ -382,8 +398,19 @@ namespace kernel {
 	};
 
 	void PartialState::atBlockStart(struct SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq, bool released) {
-		sinusoid.newFrequencyAndDepth((partialIdx + 1)*fundamentalFreq, (partialIdx + 1)*fundamentalFreq, 1.f, 1.f);
-		volumeEnvelope.atBlockStart(&voiceState->parameterInfo.start.volumeEnvelope, &voiceState->parameterInfo.end.volumeEnvelope, partialIdx, released);
+		ParameterStates *startParams = &voiceState->parameterInfo.start;
+		ParameterStates *endParams = &voiceState->parameterInfo.end;
+		detuneEnvelope.atBlockStart(&startParams->detuneEnvelope, &endParams->detuneEnvelope, partialIdx, released);
+		// calculate the start and end frequency for this block
+		float baseFreq = (partialIdx + 1)*fundamentalFreq;
+		float detuneStart = detuneEnvelope.next();
+		float detuneEnd;
+		for (int i = 1; i < BUFFER_BLOCK_SIZE; ++i) {
+			detuneEnd = detuneEnvelope.next();
+		}
+		// configure the sinusoid to transition from the starting frequency to the end frequency
+		sinusoid.newFrequencyAndDepth(baseFreq*(1.f+detuneStart), baseFreq*(1.f+detuneEnd), 1.f, 1.f);
+		volumeEnvelope.atBlockStart(&startParams->volumeEnvelope, &endParams->volumeEnvelope, partialIdx, released);
 	}
 
 	// When summing the outputs at a specific frame for each partial, we use a reduction method.
@@ -531,7 +558,7 @@ namespace kernel {
 			// Get the base partial level (the hand-drawn frequency weights)
 			float level = (1.0 / NUM_PARTIALS) * voiceState->parameterInfo.start.partialLevels[partialIdx];
 			// Get the ADSR/LFO volume envelope
-			float envelope = myState->volumeEnvelope.next();
+			float envelope = myState->volumeEnvelope.nextAsProduct();
 			outputL = outputR = level*envelope*sinusoid;
 
 			reduceOutputs(voiceState, partialIdx, baseIdx + sampleIdx, outputL, outputR);

@@ -10,8 +10,8 @@ static const int classicAdsrUsableIndices[]         = { 1, 3, 4, 5, 7, -1 };
 // static const float asrWithPeaksParameterBounds[][2] = { { 0, 1 }, { 0, 2 }, { 0, 1 }, { 0, 2 }, { 0, 1 }, { 0, 2 }, { 0, 1 }, { -0.8f, 5.0f } };
 static const int asrWithPeaksUsableIndices[]        = { 2, 3, 4, 5, 6, 7, -1 };
 
-ADSREditor::ADSREditor(PluginEditor *editor, ADSR *adsr)
-	: ParameterEditor(editor, labelNames, classicAdsrParameterBounds, classicAdsrUsableIndices), adsr(adsr) {
+ADSREditor::ADSREditor(PluginEditor *editor, ADSR *adsr, const char* editorLabel)
+	: ParameterEditor(editor, editorLabel, labelNames, classicAdsrParameterBounds, classicAdsrUsableIndices), adsr(adsr) {
 }
 
 

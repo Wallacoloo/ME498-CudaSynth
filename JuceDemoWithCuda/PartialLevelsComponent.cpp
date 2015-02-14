@@ -30,8 +30,7 @@ void PartialLevelsComponent::paint(Graphics &g)
 	}
 }
 
-
-void PartialLevelsComponent::mouseDrag(const MouseEvent &event) {
+void PartialLevelsComponent::updateFromMouseEvent(const MouseEvent &event) {
 	int partialIdx = event.getPosition().getX();
 	if (0 <= partialIdx && partialIdx < NUM_PARTIALS) {
 		float level = 1.0f - event.getPosition().getY() / (float)getHeight();
@@ -41,4 +40,13 @@ void PartialLevelsComponent::mouseDrag(const MouseEvent &event) {
 		editor->parametersChanged();
 		repaint();
 	}
+}
+
+void PartialLevelsComponent::mouseDown(const MouseEvent &event) {
+	updateFromMouseEvent(event);
+}
+
+
+void PartialLevelsComponent::mouseDrag(const MouseEvent &event) {
+	updateFromMouseEvent(event);
 }

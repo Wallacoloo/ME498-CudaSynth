@@ -6,9 +6,9 @@ PluginEditor::PluginEditor(PluginProcessor& owner)
     : AudioProcessorEditor (owner),
       midiKeyboard (owner.keyboardState, MidiKeyboardComponent::horizontalKeyboard),
 	  partialLevelsComponent(this, parameterStates.partialLevels),
-	  volumeADSR(this, parameterStates.volumeEnvelope.getAdsr()),
-	  volumeLFOFreq(this, parameterStates.volumeEnvelope.getLfo()->getFreqAdsr()),
-	  volumeLFODepth(this, parameterStates.volumeEnvelope.getLfo()->getDepthAdsr())
+	  volumeADSR(this, parameterStates.volumeEnvelope.getAdsr(), "Volume"),
+	  volumeLFOFreq(this, parameterStates.volumeEnvelope.getLfo()->getFreqAdsr(), "LFO Freq"),
+	  volumeLFODepth(this, parameterStates.volumeEnvelope.getLfo()->getDepthAdsr(), "LFO Depth")
 {
 	// add the parameter editors
 	addAndMakeVisible(partialLevelsComponent);
@@ -37,9 +37,8 @@ PluginEditor::~PluginEditor()
 
 void PluginEditor::paint (Graphics& g)
 {
-	// paint a gradient background
-    g.setGradientFill (ColourGradient (Colours::white, 0, 0,
-                                       Colours::grey, 0, (float) getHeight(), false));
+	// paint a solid background
+	g.setColour(Colour(0x30, 0x30, 0x30));
     g.fillAll();
 }
 
@@ -49,17 +48,21 @@ void PluginEditor::resized()
     const int keyboardHeight = 70;
     midiKeyboard.setBounds (4, getHeight() - keyboardHeight - 4, getWidth() - 8, keyboardHeight);
 
+	int padding = 6;
+
 	// take the volumeADSR's desired size, and offset it by what we want the location to be
 	Rectangle<int> volBounds = volumeADSR.getLocalBounds();
-	volBounds.setPosition(144, 56);
+	volBounds.setPosition(144, 48);
 	volumeADSR.setBounds(volBounds);
+
 	// take volumeLFOFreq's desired size and position it to the right of the ADSR
 	Rectangle<int> lfoFreqBounds = volumeLFOFreq.getLocalBounds();
-	lfoFreqBounds.setPosition(volBounds.getTopRight());
+	lfoFreqBounds.setPosition(volBounds.getTopRight().translated(padding, 0));
 	volumeLFOFreq.setBounds(lfoFreqBounds);
+
 	// take volumeLFODepths's desired size and position it to the right of the LFOFreq
 	Rectangle<int> lfoDepthBounds = volumeLFODepth.getLocalBounds();
-	lfoDepthBounds.setPosition(lfoFreqBounds.getTopRight());
+	lfoDepthBounds.setPosition(lfoFreqBounds.getTopRight().translated(padding, 0));
 	volumeLFODepth.setBounds(lfoDepthBounds);
 
     resizer->setBounds (getWidth() - 16, getHeight() - 16, 16, 16);

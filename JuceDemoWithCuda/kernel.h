@@ -117,6 +117,15 @@ namespace kernel {
 		}
 	};
 
+	class DetuneEnvelope {
+		float randSeed;
+		ADSRLFOEnvelope adsrLfo;
+	public:
+		inline HOST DEVICE ADSRLFOEnvelope* getAdsrLfo() {
+			return &adsrLfo;
+		}
+	};
+
 	// Struct to hold ALL parameter states at a single instant in time.
 	// There will be two of these sent during each synthesis block:
 	//   1 for at the start of the block,
@@ -126,6 +135,7 @@ namespace kernel {
 		// hand-drawn partial envelopes
 		float partialLevels[NUM_PARTIALS];
 		ADSRLFOEnvelope volumeEnvelope;
+		DetuneEnvelope detuneEnvelope;
 	};
 
 	// Call to evaluate the next N samples of a synthesizer voice into bufferB.

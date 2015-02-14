@@ -10,7 +10,7 @@ class ADSREditor : public ParameterEditor
 {
 	ADSR *adsr;
 public:
-	ADSREditor(PluginEditor *editor, ADSR *adsr);
+	ADSREditor(PluginEditor *editor, ADSR *adsr, const char* editorLabel);
 	~ADSREditor();
 	void onParameterChanged(int parameterNum, float value) override;
 };
