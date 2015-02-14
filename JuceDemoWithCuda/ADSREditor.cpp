@@ -7,19 +7,28 @@ static const float classicAdsrParameterBounds[][2]  = { { 0, 1 }, { 0, 2 }, { 0,
 static const int classicAdsrUsableIndices[]         = { 1, 3, 4, 5, 7, -1 };
 // For the case where we have no decay phase and peaks are controllable.
 // ADSR starts at arbitrary value, decays to sustain, and then releases to arbitrary value
-// static const float asrWithPeaksParameterBounds[][2] = { { 0, 1 }, { 0, 2 }, { 0, 1 }, { 0, 2 }, { 0, 1 }, { 0, 2 }, { 0, 1 }, { -0.8f, 5.0f } };
+static const float lfoFreqParameterBounds[][2] = { { 0, 100 }, { 0, 2 }, { 0, 100 }, { 0, 2 }, { 0, 100 }, { 0, 2 }, { 0, 100 }, { -0.8f, 5.0f } };
 static const int asrWithPeaksUsableIndices[]        = { 2, 3, 4, 5, 6, 7, -1 };
 
-static const int* usableIndicesFromOptions(ADSREditor::ADSREditorOptions opt) {
-	if (opt == ADSREditor::Classic) {
+static const int* usableIndicesFromOptions(ADSREditor::KnobTypes opt) {
+	if (opt == ADSREditor::ClassicKnobs) {
 		return classicAdsrUsableIndices;
-	} else if (opt == ADSREditor::AsrWithPeaks) {
+	} else if (opt == ADSREditor::AsrWithPeaksKnobs) {
 		return asrWithPeaksUsableIndices;
 	}
+	return NULL;
+}
+static const float (*parameterBoundsFromOptions(ADSREditor::KnobLimits opt))[2] {
+	if (opt == ADSREditor::NormalizedDepthLimits) {
+		return classicAdsrParameterBounds;
+	} else if (opt == ADSREditor::LFOFrequencyLimits) {
+		return lfoFreqParameterBounds;
+	}
+	return NULL;
 }
 
-ADSREditor::ADSREditor(PluginEditor *editor, ADSR *adsr, const char* editorLabel, ADSREditorOptions opt)
-	: ParameterEditor(editor, editorLabel, labelNames, classicAdsrParameterBounds, usableIndicesFromOptions(opt)), adsr(adsr) {
+ADSREditor::ADSREditor(PluginEditor *editor, ADSR *adsr, const char* editorLabel, KnobTypes knobTypes, KnobLimits knobLimits)
+	: ParameterEditor(editor, editorLabel, labelNames, parameterBoundsFromOptions(knobLimits), usableIndicesFromOptions(knobTypes)), adsr(adsr) {
 }
 
 

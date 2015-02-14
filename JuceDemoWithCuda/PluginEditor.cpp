@@ -6,9 +6,9 @@ PluginEditor::PluginEditor(PluginProcessor& owner)
     : AudioProcessorEditor (owner),
       midiKeyboard (owner.keyboardState, MidiKeyboardComponent::horizontalKeyboard),
 	  partialLevelsComponent(this, parameterStates.partialLevels),
-	  volumeADSR(this, parameterStates.volumeEnvelope.getAdsr(), "Volume", ADSREditor::Classic),
-	  volumeLFOFreq(this, parameterStates.volumeEnvelope.getLfo()->getFreqAdsr(), "LFO Freq", ADSREditor::AsrWithPeaks),
-	  volumeLFODepth(this, parameterStates.volumeEnvelope.getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaks)
+	  volumeADSR(this, parameterStates.volumeEnvelope.getAdsr(), "Volume", ADSREditor::ClassicKnobs, ADSREditor::NormalizedDepthLimits),
+	  volumeLFOFreq(this, parameterStates.volumeEnvelope.getLfo()->getFreqAdsr(), "LFO Freq", ADSREditor::AsrWithPeaksKnobs, ADSREditor::LFOFrequencyLimits),
+	  volumeLFODepth(this, parameterStates.volumeEnvelope.getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimits)
 {
 	// add the parameter editors
 	addAndMakeVisible(partialLevelsComponent);
@@ -52,7 +52,7 @@ void PluginEditor::resized()
 
 	// take the volumeADSR's desired size, and offset it by what we want the location to be
 	Rectangle<int> volBounds = volumeADSR.getLocalBounds();
-	volBounds.setPosition(144, 48);
+	volBounds.setPosition(144, 30);
 	volumeADSR.setBounds(volBounds);
 
 	// take volumeLFOFreq's desired size and position it to the right of the ADSR
