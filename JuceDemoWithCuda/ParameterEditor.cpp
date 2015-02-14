@@ -27,7 +27,7 @@ ParameterEditor::ParameterEditor(PluginEditor *editor, const char* editorLabelTe
 		slider->setRange(parameterBounds[i][0], parameterBounds[i][1], 0.f);
 		addAndMakeVisible(label);
 		label->setFont(Font(11.f));
-		label->setJustificationType(Justification::centred);
+		label->setJustificationType(Justification::centredTop);
 		label->setText(labelNames[i], sendNotification);
 	}
 	// call resized() to compute the desired bounds
@@ -53,7 +53,8 @@ void ParameterEditor::resized()
 	int sliderPadding = 40;
 	int sliderLabelHeight = 16;
 	int mainLabelHeight = 20;
-	int fullWidth = sliderPadding*nSliders;
+	int horizBorderPadding = 4;
+	int fullWidth = horizBorderPadding*2 + sliderPadding*nSliders;
 	int fullHeight = mainLabelHeight + sliderSize + sliderLabelHeight;
 
 	// position the overall editor label
@@ -61,8 +62,8 @@ void ParameterEditor::resized()
 
 	// position the sliders & their labels
 	for (int i = 0; i < nSliders; ++i) {
-		sliders[i].setBounds(sliderPadding*i, mainLabelHeight, sliderSize, sliderSize);
-		labels[i].setBounds(sliderPadding*i, mainLabelHeight+sliderSize, sliderSize, sliderLabelHeight);
+		sliders[i].setBounds(horizBorderPadding + sliderPadding*i, mainLabelHeight, sliderSize, sliderSize);
+		labels[i].setBounds(horizBorderPadding + sliderPadding*i, mainLabelHeight + sliderSize, sliderSize, sliderLabelHeight);
 	}
 	// set the desired size
 	setSize(fullWidth, fullHeight);
