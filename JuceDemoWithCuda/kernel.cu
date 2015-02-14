@@ -89,7 +89,7 @@ namespace kernel {
 	typedef ComplexT<float> PhaseT;
 
 	// Efficient way to compute successive sine values
-	class Sinuisoidal {
+	class Sinusoidal {
 		// The partial has a phase function, phase(t).
 		// For constant frequency, phase(t) = w*t.
 		// We need varied frequency over time whenever the frequency changes.
@@ -103,7 +103,7 @@ namespace kernel {
 		PhaseT phasePrime;
 		PhaseT phaseDoublePrime;
 	public:
-		Sinuisoidal() : phase(1, 0) {}
+		Sinusoidal() : phase(1, 0) {}
 		// transition from start frequency/depth to end frequency/depth over this block
 		__device__ __host__ void newFrequencyAndDepth(float startFreq, float endFreq, float startDepth, float endDepth) {
 			float wStart = INV_SAMPLE_RATE * startFreq;
@@ -307,7 +307,7 @@ namespace kernel {
 	class LFOState {
 		ADSRState freqAdsrState;
 		ADSRState depthAdsrState;
-		Sinuisoidal sinusoid;
+		Sinusoidal sinusoid;
 	public:
 		__device__ __host__ void atBlockStart(LFO *start, LFO *end, unsigned partialIdx, bool released) {
 			ADSR *freqAdsrStart =  start->getFreqAdsr();
@@ -357,7 +357,7 @@ namespace kernel {
 
 	// Contains extra state information relevant to each individual partial
 	struct PartialState {
-		Sinuisoidal sinusoid;
+		Sinusoidal sinusoid;
 		ADSRLFOEnvelopeState volumeEnvelope;
 		PartialState() {}
 		PartialState(struct SynthState *synthState, unsigned voiceNum, unsigned partialIdx) {}
