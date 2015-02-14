@@ -104,7 +104,7 @@ namespace kernel {
 		PhaseT phaseDoublePrime;
 	public:
 		Sinuisoidal() : phase(1, 0) {}
-		// transition from start frequency to end frequency over this block
+		// transition from start frequency/depth to end frequency/depth over this block
 		__device__ __host__ void newFrequencyAndDepth(float startFreq, float endFreq, float startDepth, float endDepth) {
 			float wStart = INV_SAMPLE_RATE * startFreq;
 			float wEnd = INV_SAMPLE_RATE * endFreq;
@@ -115,12 +115,7 @@ namespace kernel {
 			// (phasePrimeEnd/phasePrimeStart)^(1.0/BUFFER_BLOCK_SIZE) = doublePrime
 			// phaseDoublePrime = PhaseT(powf(phasePrimeEnd/phasePrimeStart, 1.0 / BUFFER_BLOCK_SIZE));
 			// Note: (a+bi)^n = (r*e^(i*p))^n = r^n*e^(i*n*p)
-			if (wStart > 0.000001) {
-				// check for small phasePrimeStart to avoid division by near-zero
-				phaseDoublePrime = (phasePrimeEnd / phasePrimeStart).pow(1.f / BUFFER_BLOCK_SIZE);
-			} else {
-				phaseDoublePrime = PhaseT(1, 0);
-			}
+			phaseDoublePrime = (phasePrimeEnd / phasePrimeStart).pow(1.f / BUFFER_BLOCK_SIZE);
 
 			// we must avoid the division by zero if the current depth is 0.
 			// to avoid this, we just prevent the desired depth from ever *being* zero. 
@@ -192,6 +187,9 @@ namespace kernel {
 		// For release, use the same approach as the decay.
 		float releasePrime;
 		float releaseDoublePrime;
+		// also need to track the end value (usually 0).
+		float releaseLevel;
+		float releaseLevelPrime;
 	public:
 		// initialized at the start of a note
 		ADSRState() : mode(AttackMode), value(0.f) {}
@@ -255,12 +253,15 @@ namespace kernel {
 			float dv_dtInSecondsAtRelease2 = (endReleaseLevel - beginReleaseLevelEnd) / max(endRelease, INV_SAMPLE_RATE);
 			float dv_dt2_minus_dv_dt1InSecondsAtRelease = dv_dtInSecondsAtRelease2 - dv_dtInSecondsAtRelease;
 			releaseDoublePrime = INV_SAMPLE_RATE * dv_dt2_minus_dv_dt1InSecondsAtRelease;
+			releaseLevel = startReleaseLevel;
+			releaseLevelPrime = INV_BUFFER_BLOCK_SIZE * (endReleaseLevel - startReleaseLevel);
 		}
 		__device__ __host__ bool isActive() const {
 			return mode != EndMode;
 		}
 		__device__ __host__ float next() {
 			sustainLevel += sustainPrime;
+			releaseLevel += releaseLevelPrime;
 			switch (mode) {
 			case AttackMode:
 				value += attackPrime;
@@ -289,13 +290,14 @@ namespace kernel {
 				value += releasePrime;
 				releasePrime += releaseDoublePrime;
 				// check if it's time to move to the next mode or if value is concave-up & no longer decreasing
-				if (value <= 0.f || releasePrime > 0) {
-					value = 0.f;
+				if (value <= releaseLevel || releasePrime > 0) {
+					value = releaseLevel;
 					mode = EndMode;
 				}
 				break;
 			default:
 			case EndMode:
+				value = releaseLevel;
 				break;
 			}
 			return value;
