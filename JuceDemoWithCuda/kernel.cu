@@ -190,6 +190,8 @@ namespace kernel {
 		// also need to track the end value (usually 0).
 		float releaseLevel;
 		float releaseLevelPrime;
+		// need to track the value at release time in order to update release-related variables at each block
+		float valueAtRelease;
 	public:
 		// initialized at the start of a note
 		ADSRState() : mode(AttackMode), value(0.f) {}
@@ -213,11 +215,15 @@ namespace kernel {
 			float endRelease =        end->getReleaseFor(partialIdx);
 			float endReleaseLevel =   end->getReleaseLevel();
 			float beginReleaseLevelStart, beginReleaseLevelEnd;
-			if (released) {
+			if (released && mode != ReleaseMode) {
 				mode = ReleaseMode;
 				// release starts from current value
 				beginReleaseLevelStart = value;
 				beginReleaseLevelEnd = value;
+				valueAtRelease = value;
+			} else if (released && mode == ReleaseMode) {
+				beginReleaseLevelStart = valueAtRelease;
+				beginReleaseLevelEnd = valueAtRelease;
 			} else {
 				// release will start from the sustain value
 				beginReleaseLevelStart = startRelease;
