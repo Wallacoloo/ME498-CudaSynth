@@ -1,3 +1,6 @@
+// set to 1 to disable CUDA even on cuda-enabled machines
+#define NEVER_USE_CUDA 0
+
 // number of audio channels to use (2=stereo)
 // This macro serves to avoid placing magic numbers in our code - it is assumed this will always be 2.
 #define NUM_CH 2

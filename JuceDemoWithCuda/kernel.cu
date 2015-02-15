@@ -431,6 +431,31 @@ namespace kernel {
 	// When running on the cpu, we need to control concurrent access to the synth state
 	std::mutex synthStateMutex;
 
+	static void printCudaDeviveProperties(cudaDeviceProp devProp) {
+		// utility function to log device info. Source: https://www.cac.cornell.edu/vw/gpu/example_submit.aspx
+		printf("Major revision number:         %d\n", devProp.major);
+		printf("Minor revision number:         %d\n", devProp.minor);
+		printf("Name:                          %s\n", devProp.name);
+		printf("Total global memory:           %lu\n", devProp.totalGlobalMem);
+		printf("Total shared memory per block: %lu\n", devProp.sharedMemPerBlock);
+		printf("Total registers per block:     %d\n", devProp.regsPerBlock);
+		printf("Warp size:                     %d\n", devProp.warpSize);
+		printf("Maximum memory pitch:          %lu\n", devProp.memPitch);
+		printf("Maximum threads per block:     %d\n", devProp.maxThreadsPerBlock);
+		for (int i = 0; i < 3; ++i) {
+			printf("Maximum dimension %d of block:  %d\n", i, devProp.maxThreadsDim[i]);
+		}
+		for (int i = 0; i < 3; ++i) {
+			printf("Maximum dimension %d of grid:   %d\n", i, devProp.maxGridSize[i]);
+		}
+		printf("Clock rate:                    %d\n", devProp.clockRate);
+		printf("Total constant memory:         %lu\n", devProp.totalConstMem);
+		printf("Texture alignment:             %lu\n", devProp.textureAlignment);
+		printf("Concurrent copy and execution: %s\n", (devProp.deviceOverlap ? "Yes" : "No"));
+		printf("Number of multiprocessors:     %d\n", devProp.multiProcessorCount);
+		printf("Kernel execution timeout:      %s\n", (devProp.kernelExecTimeoutEnabled ? "Yes" : "No"));
+	}
+
 
 	static void checkCudaError(cudaError_t e) {
 		if (e != cudaSuccess) {
@@ -444,8 +469,13 @@ namespace kernel {
 		int deviceCount;
 		cudaError_t err = cudaGetDeviceCount(&deviceCount);
 		// if we get a cuda error, it may be because the system has no cuda dlls.
-		bool useCuda = (err == cudaSuccess && deviceCount != 0);
+		bool useCuda = (err == cudaSuccess && deviceCount != 0) && !NEVER_USE_CUDA;
 		printf("Using Cuda? %i\n", useCuda);
+		if (useCuda) {
+			cudaDeviceProp prop;
+			cudaGetDeviceProperties(&prop, 0);
+			printCudaDeviveProperties(prop);
+		}
 		return useCuda;
 	}
 
@@ -573,6 +603,8 @@ namespace kernel {
 			float envelope = myState->volumeEnvelope.nextAsProduct();
 			float pan = myState->stereoPanEnvelope.nextAsSum();
 			float unpanned = level*envelope*sinusoid;
+			//float outputL = unpanned;
+			//float outputR = unpanned;
 			// full left = -1 pan. full right = +1 pan.
 			// Use circular panning, where L^2 + R^2 = 1.0
 			//   R(+1.0 pan) = 1.0, L(-1.0 pan) = 0.0, R(0.0 pan) = sqrt(1/2)
