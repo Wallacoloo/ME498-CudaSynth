@@ -174,8 +174,8 @@ PluginProcessor::PluginProcessor()
     : delayBuffer (2, 12000)
 {
 	File logfile = File::getCurrentWorkingDirectory().getChildFile("CUDASynth.log");
-	FileLogger* fl = new FileLogger(logfile, "Juce VST starting", 0);
-	Logger::setCurrentLogger(fl);
+	fileLogger = new FileLogger(logfile, "Juce VST starting", 0);
+	Logger::setCurrentLogger(fileLogger);
     // Set up some default values..
     gain = defaultGain;
     delay = defaultDelay;
@@ -196,6 +196,11 @@ PluginProcessor::PluginProcessor()
 
 PluginProcessor::~PluginProcessor()
 {
+	if (fileLogger) {
+		Logger::setCurrentLogger(nullptr);
+		delete fileLogger;
+		fileLogger = NULL;
+	}
 }
 
 //==============================================================================
