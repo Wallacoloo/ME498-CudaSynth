@@ -424,10 +424,6 @@ namespace kernel {
 		stereoPanEnvelope.atBlockStart(&startParams->stereoPanEnvelope, &endParams->stereoPanEnvelope, partialIdx, released);
 	}
 
-	// When summing the outputs at a specific frame for each partial, we use a reduction method.
-	// This reduction method requires a temporary array in shared memory.
-	__shared__ float partialReductionOutputs[NUM_PARTIALS*NUM_CH];
-
 	// this is a circular buffer of sample data (interleaved by channel number) stored on the device
 	// It is persistent and lengthy, in order to accomodate the delay effect.
 	SynthState *d_synthState = NULL;
@@ -516,13 +512,18 @@ namespace kernel {
 		unsigned bufferIdx = NUM_CH * (sampleIdx % CIRCULAR_BUFFER_LEN);
 #ifdef __CUDA_ARCH__
 		//device code
+		// This reduction method requires a temporary array in shared memory.
+		__shared__ float partialReductionOutputs[NUM_PARTIALS*NUM_CH];
+
 		partialReductionOutputs[NUM_CH*partialIdx + 0] = outputL;
 		partialReductionOutputs[NUM_CH*partialIdx + 1] = outputR;
 		unsigned numActiveThreads = NUM_PARTIALS / 2;
 		while (numActiveThreads > 0) {
 			__syncthreads();
-			partialReductionOutputs[NUM_CH*partialIdx + 0] += partialReductionOutputs[NUM_CH*partialIdx + numActiveThreads*NUM_CH + 0];
-			partialReductionOutputs[NUM_CH*partialIdx + 1] += partialReductionOutputs[NUM_CH*partialIdx + numActiveThreads*NUM_CH + 1];
+			if (partialIdx < numActiveThreads) {
+				partialReductionOutputs[NUM_CH*partialIdx + 0] += partialReductionOutputs[NUM_CH*partialIdx + numActiveThreads*NUM_CH + 0];
+				partialReductionOutputs[NUM_CH*partialIdx + 1] += partialReductionOutputs[NUM_CH*partialIdx + numActiveThreads*NUM_CH + 1];
+			}
 			numActiveThreads /= 2;
 		}
 		if (partialIdx == 0) {
@@ -564,6 +565,7 @@ namespace kernel {
 		myState->atBlockStart(voiceState, partialIdx, fundamentalFreq, released);
 		// Get the base partial level (the hand-drawn frequency weights)
 		float level = (1.0 / NUM_PARTIALS) * voiceState->parameterInfo.start.partialLevels[partialIdx];
+		//printf("partialIdx: %i\n", partialIdx);
 		for (int sampleIdx = 0; sampleIdx < BUFFER_BLOCK_SIZE; ++sampleIdx) {
 			// Extract the sinusoidal portion of the wave.
 			float sinusoid = myState->sinusoid.next().imag();
@@ -598,8 +600,8 @@ namespace kernel {
 			//float outputR = unpanned * 0.5*(1 + pan);
 
 			reduceOutputs(voiceState, partialIdx, baseIdx + sampleIdx, outputL, outputR);
-			updateVoiceParametersIfNeeded(voiceState, voiceNum, partialIdx);
 		}
+		updateVoiceParametersIfNeeded(voiceState, voiceNum, partialIdx);
 		// TODO: use a proper reduction algorithm to determine when the note is complete
 		if (partialIdx == NUM_PARTIALS-1 && !myState->volumeEnvelope.isActive()) {
 			// signal no more samples
