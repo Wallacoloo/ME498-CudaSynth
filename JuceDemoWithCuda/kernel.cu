@@ -85,11 +85,8 @@ namespace kernel {
 		}
 	};
 
-	// Use complex float pairs to represent the phase functions
-	typedef ComplexT<float> PhaseT;
-
 	// Efficient way to compute successive sine values
-	class Sinusoidal {
+	/*class Sinusoidal {
 		// The partial has a phase function, phase(t).
 		// For constant frequency, phase(t) = w*t.
 		// We need varied frequency over time whenever the frequency changes.
@@ -99,6 +96,9 @@ namespace kernel {
 		// This *can* be done efficiently.
 		// First, evaluate e^iw0 at the start of the block, store as dP/dt
 		//   Also evaluate e^ik(1) as d^2P/dt^2. Each sample, multiply dP/dt = dP/dt * d^2P/dt^2
+		
+		// Use complex float pairs to represent the phase functions
+		typedef ComplexT<float> PhaseT;
 		PhaseT phase;
 		PhaseT phasePrime;
 		PhaseT phaseDoublePrime;
@@ -141,10 +141,50 @@ namespace kernel {
 			phase *= phasePrime;
 			return phase;
 		}
+	};*/
+
+	class Sinusoidal {
+		// y(t) = mag(t)*sin(phase(t)), all t in frame offset from block start
+		// magnitude of sinusoid
+		// mag(t) = mag_c0 + t*mag_c1
+		float mag_c0;
+		float mag_c1;
+		// phase function coefficients:
+		// phase(t) = phase_c0 + phase_c1*t + phase_c2*t^2
+		float phase_c0, phase_c1, phase_c2;
+	public:
+		Sinusoidal() : mag_c0(0), mag_c1(0), phase_c0(0), phase_c1(0), phase_c2(0) {}
+		// startFreq, endFreq given in rad/sec
+		__device__ __host__ void newFrequencyAndDepth(float startFreq, float endFreq, float startDepth, float endDepth) {
+			// compute phase function coefficients
+			// first, carry over the phase from the end of the previous buffer.
+			phase_c0 = phaseAtIdx(BUFFER_BLOCK_SIZE);
+			// initial slope is w0
+			phase_c1 = startFreq*INV_BUFFER_BLOCK_SIZE;
+			float endW = endFreq*INV_BUFFER_BLOCK_SIZE;
+			// phase'(BUFFER_BLOCK_SIZE) = endW
+			// phase_c1 + 2*t*phase_c2 = endW
+			// phase_c2 = (endW - phase_c1) / (2*BUFFER_BLOCK_SIZE)
+			phase_c2 = (endW - phase_c1) / (2 * BUFFER_BLOCK_SIZE);
+			// compute magnitude function coefficients
+			mag_c0 = startDepth;
+			float deltaDepth = endDepth - startDepth;
+			mag_c1 = deltaDepth * INV_BUFFER_BLOCK_SIZE;
+			
+		}
+		__device__ __host__ float phaseAtIdx(unsigned idx) const {
+			return phase_c0 + idx*(phase_c1 + idx*phase_c2);
+		}
+		__device__ __host__ float magAtIdx(unsigned idx) const {
+			return mag_c0 + idx*mag_c1;
+		}
+		__device__ __host__ float valueAtIdx(unsigned idx) const {
+			return magAtIdx(idx)*sinf(phaseAtIdx(idx));
+		}
 	};
 
 	// Efficient way to compute sequential ADSR values
-	class ADSRState {
+	/*class ADSRState {
 		enum Mode {
 			AttackMode,
 			DecayMode,
@@ -316,6 +356,75 @@ namespace kernel {
 				break;
 			}
 			return value;
+		}
+	};*/
+	class ADSRState {
+		enum Mode {
+			AttackMode=0,
+			DecayMode=1,
+			SustainMode=2,
+			ReleaseMode=3,
+			EndMode,
+		};
+		// mode at start of block
+		Mode mode;
+		// break each mode into a line
+		// during the attack/decay mode, 
+		//   the block may be up to 2 lines during the block. During sustain/release, just one line.
+		// The best way to handle this is to define the function like:
+		// value(t) = (t <= toggleTime)*(line0_c0+line0_c1*t) + !(t <= toggleTime)*(line1_c0+line1_c1*t)
+		int toggleIdx;
+		// segment coefficients
+		float line0_c0, line0_c1, line1_c0, line1_c1;
+	public:
+		// initialized at the start of a note
+		ADSRState() : mode(AttackMode), toggleIdx(BUFFER_BLOCK_SIZE), line0_c0(0), line0_c1(0), line1_c0(0), line1_c1(0) {}
+		__device__ __host__ void atBlockStart(ADSR *start, ADSR *end, unsigned partialIdx, bool released) {
+			// get the last value from the previous buffer & increment the mode if needed.
+			line0_c0 = valueAtIdx(BUFFER_BLOCK_SIZE);
+			mode = (Mode)((unsigned)mode + (BUFFER_BLOCK_SIZE > toggleIdx));
+			// attack segment
+			float attackTime0 = start->getAttackFor(partialIdx);
+			float attackDeltaY0 = start->getPeakLevel() - start->getStartLevel();
+			float attackSlope0 = attackDeltaY0 / attackTime0;
+			float attackTime1 = end->getAttackFor(partialIdx);
+			float attackDeltaY1 = end->getPeakLevel() - end->getStartLevel();
+			float attackSlope1 = attackDeltaY1 / attackTime1;
+			float attack1 = (attackSlope1 - attackSlope0) * INV_BUFFER_BLOCK_SIZE;
+			// decay segment
+			float decayTime0 = start->getDecayFor(partialIdx);
+			float decayDeltaY0 = start->getSustain() - start->getPeakLevel();
+			float decaySlope0 = decayDeltaY0 / decayTime0;
+			float decayTime1 = end->getDecayFor(partialIdx);
+			float decayDeltaY1 = end->getSustain() - end->getPeakLevel();
+			float decaySlope1 = decayDeltaY1 / decayTime1;
+			float decay1 = (decaySlope1 - decaySlope0) * INV_BUFFER_BLOCK_SIZE;
+			// sustain segment
+			float sustain0 = start->getSustain();
+			float sustainDelta = end->getSustain() - sustain0;
+			float sustain1 = sustainDelta * INV_BUFFER_BLOCK_SIZE;
+			// release segment
+			float releaseTime0 = start->getReleaseFor(partialIdx);
+			float releaseDeltaY0 = start->getReleaseLevel() - start->getSustain();
+			float releaseSlope0 = releaseDeltaY0 / releaseTime0;
+			float releaseTime1 = end->getReleaseFor(partialIdx);
+			float releaseDeltaY1 = end->getReleaseLevel() - end->getSustain();
+			float releaseSlope1 = releaseDeltaY1 / releaseTime1;
+			float release1 = (releaseSlope1 - releaseSlope0) * INV_BUFFER_BLOCK_SIZE;
+			// end segment
+			float endMode0 = start->getReleaseLevel();
+			float endModeDelta = end->getReleaseLevel() - endMode0;
+			float endMode1 = endModeDelta * INV_BUFFER_BLOCK_SIZE;
+			float modeCoeffs[] = { attack1, decay1, sustain1, release1, endMode1 };
+			line0_c1 = ;
+			line1_c0 = ;
+			line1_c1 = ;
+		}
+		__device__ __host__ bool isActiveAtEndOfBlock() const {
+			return mode == EndMode;
+		}
+		__device__ __host__ float valueAtIdx(unsigned idx) const {
+
 		}
 	};
 
