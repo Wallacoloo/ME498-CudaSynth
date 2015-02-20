@@ -364,16 +364,17 @@ namespace kernel {
 			DecayMode=1,
 			SustainMode=2,
 			ReleaseMode=3,
-			EndMode,
+			EndMode=4,
 		};
 		// mode at start of block
 		Mode mode;
 		// break each mode into a line
 		// during the attack/decay mode, 
 		//   the block may be up to 2 lines during the block. During sustain/release, just one line.
+		// actually, for sufficiently short attack/decay, the note may transition from attack->decay->sustain in one single block
 		// The best way to handle this is to define the function like:
 		// value(t) = (t <= toggleTime)*(line0_c0+line0_c1*t) + !(t <= toggleTime)*(line1_c0+line1_c1*t)
-		int toggleIdx;
+		unsigned toggleIdx;
 		// segment coefficients
 		float line0_c0, line0_c1, line1_c0, line1_c1;
 	public:
@@ -382,49 +383,74 @@ namespace kernel {
 		__device__ __host__ void atBlockStart(ADSR *start, ADSR *end, unsigned partialIdx, bool released) {
 			// get the last value from the previous buffer & increment the mode if needed.
 			line0_c0 = valueAtIdx(BUFFER_BLOCK_SIZE);
-			mode = (Mode)((unsigned)mode + (BUFFER_BLOCK_SIZE > toggleIdx));
+			mode = (Mode)((unsigned)mode + (mode != EndMode && (BUFFER_BLOCK_SIZE > toggleIdx)));
+			// TODO: reduce the below to lookups into the ADSR
+			// TODO: segments are not linear; they are quadratic
+			// i.e. level0 = start->getLevelFor(mode, partialIdx),
+			// level1 = start->getLevelFor(mode+1, partialIdx),
+			// ...
 			// attack segment
-			float attackTime0 = start->getAttackFor(partialIdx);
+			float attackTime0 = max(INV_BUFFER_BLOCK_SIZE, start->getAttackFor(partialIdx));
 			float attackDeltaY0 = start->getPeakLevel() - start->getStartLevel();
 			float attackSlope0 = attackDeltaY0 / attackTime0;
-			float attackTime1 = end->getAttackFor(partialIdx);
+			float attackTime1 = max(INV_BUFFER_BLOCK_SIZE, end->getAttackFor(partialIdx));
 			float attackDeltaY1 = end->getPeakLevel() - end->getStartLevel();
 			float attackSlope1 = attackDeltaY1 / attackTime1;
-			float attack1 = (attackSlope1 - attackSlope0) * INV_BUFFER_BLOCK_SIZE;
+			float attack0 = start->getStartLevel();
+			float attack1 = 0.5f*(attackSlope1 + attackSlope0) * INV_BUFFER_BLOCK_SIZE;
 			// decay segment
-			float decayTime0 = start->getDecayFor(partialIdx);
+			float decayTime0 = max(INV_BUFFER_BLOCK_SIZE, start->getDecayFor(partialIdx));
 			float decayDeltaY0 = start->getSustain() - start->getPeakLevel();
 			float decaySlope0 = decayDeltaY0 / decayTime0;
-			float decayTime1 = end->getDecayFor(partialIdx);
+			float decayTime1 = max(INV_BUFFER_BLOCK_SIZE, end->getDecayFor(partialIdx));
 			float decayDeltaY1 = end->getSustain() - end->getPeakLevel();
 			float decaySlope1 = decayDeltaY1 / decayTime1;
-			float decay1 = (decaySlope1 - decaySlope0) * INV_BUFFER_BLOCK_SIZE;
+			float decay0 = start->getPeakLevel();
+			float decay1 = 0.5f*(decaySlope1 + decaySlope0) * INV_BUFFER_BLOCK_SIZE;
 			// sustain segment
 			float sustain0 = start->getSustain();
 			float sustainDelta = end->getSustain() - sustain0;
 			float sustain1 = sustainDelta * INV_BUFFER_BLOCK_SIZE;
 			// release segment
-			float releaseTime0 = start->getReleaseFor(partialIdx);
+			float releaseTime0 = max(INV_BUFFER_BLOCK_SIZE, start->getReleaseFor(partialIdx));
 			float releaseDeltaY0 = start->getReleaseLevel() - start->getSustain();
 			float releaseSlope0 = releaseDeltaY0 / releaseTime0;
-			float releaseTime1 = end->getReleaseFor(partialIdx);
+			float releaseTime1 = max(INV_BUFFER_BLOCK_SIZE, end->getReleaseFor(partialIdx));
 			float releaseDeltaY1 = end->getReleaseLevel() - end->getSustain();
 			float releaseSlope1 = releaseDeltaY1 / releaseTime1;
-			float release1 = (releaseSlope1 - releaseSlope0) * INV_BUFFER_BLOCK_SIZE;
+			float release0 = start->getReleaseLevel();
+			float release1 = 0.5f*(releaseSlope1 + releaseSlope0) * INV_BUFFER_BLOCK_SIZE;
 			// end segment
 			float endMode0 = start->getReleaseLevel();
 			float endModeDelta = end->getReleaseLevel() - endMode0;
 			float endMode1 = endModeDelta * INV_BUFFER_BLOCK_SIZE;
-			float modeCoeffs[] = { attack1, decay1, sustain1, release1, endMode1 };
-			line0_c1 = ;
-			line1_c0 = ;
-			line1_c1 = ;
+			float modeCoeffs[][2] = {
+				{ attack0, attack1 },
+				{ decay0, decay1 },
+				{ sustain0, sustain1 },
+				{ release0, release1 },
+				{ endMode0, endMode1 },
+				{ endMode0, endMode1 }};
+			line0_c1 = modeCoeffs[(unsigned)mode][1];
+			line1_c0 = modeCoeffs[(unsigned)mode+1][0];
+			line1_c1 = modeCoeffs[(unsigned)mode+1][1];
+			// solve for toggleIdx:
+			// line0(toggleIdx) = line1(toggleIdx)
+			// line0_c0 + toggleIdx*line0_c1 = line1_c0 + toggleIdx*line1_c1
+			// line0_c0 - line1_c0 = toggleIdx*(line1_c1-line0_c1)
+			// TODO: ensure line1_c1 never equal to line0_c1
+			toggleIdx = (line0_c0 - line1_c0) / (line1_c1 - line0_c1);
+		}
+		__device__ __host__ bool segmentFromIdx(unsigned idx) const {
+			return idx > toggleIdx;
 		}
 		__device__ __host__ bool isActiveAtEndOfBlock() const {
-			return mode == EndMode;
+			return (unsigned)mode + segmentFromIdx(BUFFER_BLOCK_SIZE) < (unsigned)EndMode;
 		}
 		__device__ __host__ float valueAtIdx(unsigned idx) const {
-
+			// return the first line evaluated at idx if idx < toggleIdx, else evaluate the second line at idx
+			bool seg = segmentFromIdx(idx);
+			return (!seg)*(line0_c0 + idx*line0_c1) + (seg)*(line1_c0 + idx*line0_c1);
 		}
 	};
 
@@ -443,18 +469,16 @@ namespace kernel {
 			depthAdsrState.atBlockStart(depthAdsrStart, depthAdsrEnd, partialIdx, released);
 			// obtain the starting and ending frequency and depth.
 			// We will then just linearly interpolate over the block.
-			float startFreq = freqAdsrState.next();
-			float startDepth = depthAdsrState.next();
-			float endFreq, endDepth;
-			// TODO: implement a more efficient way to get the last ADSR value in a block
-			for (int i = 1; i < BUFFER_BLOCK_SIZE; ++i) {
-				endFreq = freqAdsrState.next();
-				endDepth = depthAdsrState.next();
-			}
+			//float startFreq = freqAdsrState.next();
+			//float startDepth = depthAdsrState.next();
+			float startFreq = freqAdsrState.valueAtIdx(0);
+			float startDepth = depthAdsrState.valueAtIdx(0);
+			float endFreq = freqAdsrState.valueAtIdx(BUFFER_BLOCK_SIZE);
+			float endDepth = depthAdsrState.valueAtIdx(BUFFER_BLOCK_SIZE);
 			sinusoid.newFrequencyAndDepth(startFreq, endFreq, startDepth, endDepth);
 		}
-		__device__ __host__ float next() {
-			return sinusoid.next().imag();
+		__device__ __host__ float valueAtIdx(unsigned idx) const{
+			return sinusoid.valueAtIdx(idx);
 		}
 	};
 
@@ -466,14 +490,20 @@ namespace kernel {
 			adsr.atBlockStart(envStart->getAdsr(), envEnd->getAdsr(), partialIdx, released);
 			lfo.atBlockStart(envStart->getLfo(), envEnd->getLfo(), partialIdx, released);
 		}
-		__device__ __host__ float nextAsProduct() {
+		/*__device__ __host__ float nextAsProduct() {
 			return adsr.next() * (1 + lfo.next());
 		}
 		__device__ __host__ float nextAsSum() {
 			return adsr.next() + lfo.next();
+		}*/
+		__device__ __host__ float productAtIdx(unsigned idx) const {
+			return adsr.valueAtIdx(idx) * (1 + lfo.valueAtIdx(idx));
 		}
-		__device__ __host__ bool isActive() const {
-			return adsr.isActive();
+		__device__ __host__ float sumAtIdx(unsigned idx) const {
+			return adsr.valueAtIdx(idx) + lfo.valueAtIdx(idx);
+		}
+		__device__ __host__ bool isActiveAtEndOfBlock() const {
+			return adsr.isActiveAtEndOfBlock();
 		}
 	};
 
@@ -483,8 +513,11 @@ namespace kernel {
 		__device__ __host__ void atBlockStart(DetuneEnvelope *envStart, DetuneEnvelope *envEnd, unsigned partialIdx, bool released) {
 			adsrLfoState.atBlockStart(envStart->getAdsrLfo(), envEnd->getAdsrLfo(), partialIdx, released);
 		}
-		__device__ __host__ float next() {
+		/*__device__ __host__ float next() {
 			return adsrLfoState.nextAsSum();
+		}*/
+		__device__ __host__ float valueAtIdx(unsigned idx) const {
+			return adsrLfoState.sumAtIdx(idx);
 		}
 	};
 
@@ -520,13 +553,12 @@ namespace kernel {
 		ParameterStates *startParams = &voiceState->parameterInfo.start;
 		ParameterStates *endParams = &voiceState->parameterInfo.end;
 		detuneEnvelope.atBlockStart(&startParams->detuneEnvelope, &endParams->detuneEnvelope, partialIdx, released);
+		
 		// calculate the start and end frequency for this block
 		float baseFreq = (partialIdx + 1)*fundamentalFreq;
-		float detuneStart = detuneEnvelope.next();
-		float detuneEnd;
-		for (int i = 1; i < BUFFER_BLOCK_SIZE; ++i) {
-			detuneEnd = detuneEnvelope.next();
-		}
+		float detuneStart = detuneEnvelope.valueAtIdx(0);
+		float detuneEnd = detuneEnvelope.valueAtIdx(BUFFER_BLOCK_SIZE);
+
 		// configure the sinusoid to transition from the starting frequency to the end frequency
 		sinusoid.newFrequencyAndDepth(baseFreq*(1.f+detuneStart), baseFreq*(1.f+detuneEnd), 1.f, 1.f);
 		volumeEnvelope.atBlockStart(&startParams->volumeEnvelope, &endParams->volumeEnvelope, partialIdx, released);
@@ -707,10 +739,13 @@ namespace kernel {
 		//printf("partialIdx: %i\n", partialIdx);
 		for (int sampleIdx = 0; sampleIdx < BUFFER_BLOCK_SIZE; ++sampleIdx) {
 			// Extract the sinusoidal portion of the wave.
-			float sinusoid = myState->sinusoid.next().imag();
+			// float sinusoid = myState->sinusoid.next().imag();
+			float sinusoid = myState->sinusoid.valueAtIdx(sampleIdx);
 			// Get the ADSR/LFO volume envelope
-			float envelope = myState->volumeEnvelope.nextAsProduct();
-			float pan = myState->stereoPanEnvelope.nextAsSum();
+			//float envelope = myState->volumeEnvelope.nextAsProduct();
+			//float pan = myState->stereoPanEnvelope.nextAsSum();
+			float envelope = myState->volumeEnvelope.productAtIdx(sampleIdx);
+			float pan = myState->stereoPanEnvelope.sumAtIdx(sampleIdx);
 			float unpanned = level*envelope*sinusoid;
 			//float outputL = unpanned;
 			//float outputR = unpanned;
@@ -744,7 +779,7 @@ namespace kernel {
 		}
 		updateVoiceParametersIfNeeded(voiceState, voiceNum, partialIdx);
 		// TODO: use a proper reduction algorithm to determine when the note is complete
-		if (partialIdx == NUM_PARTIALS-1 && !myState->volumeEnvelope.isActive()) {
+		if (partialIdx == NUM_PARTIALS-1 && !myState->volumeEnvelope.isActiveAtEndOfBlock()) {
 			// signal no more samples
 			unsigned bufferEndIdx = NUM_CH * ((baseIdx + (BUFFER_BLOCK_SIZE - 1)) % CIRCULAR_BUFFER_LEN);
 			voiceState->sampleBuffer[bufferEndIdx] = NAN;

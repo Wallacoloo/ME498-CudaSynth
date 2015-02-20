@@ -6,7 +6,21 @@
 namespace kernel {
 
 	class ADSR {
-		// level at t=0
+		enum Mode {
+			AttackMode = 0,
+			DecayMode = 1,
+			SustainMode = 2,
+			ReleaseMode = 3,
+			EndMode = 4,
+		};
+		// essentially have 4 line segments:
+		// attack, decay, sustain, release
+		// each segment has a starting value and a length.
+		// release mode also has an ending value, which we accomplish with a 5th (constant) segment
+		// sustain has infinite length, everything else has finite length.
+		float levelsAndLengths[5][2];
+		float scaleByPartialIdx;
+		/*// level at t=0
 		float startLevel;
 		// time it takes for the signal to rise to its peak
 		float a;
@@ -20,30 +34,46 @@ namespace kernel {
 		// level at t=infinity. Usually 0 when the envelope represents amplitude, but has uses in detune/filter envelopes
 		float releaseLevel;
 		// used to (externally) multiply the a, d and r values by (1+scaleByPartialIdx*p)
-		float scaleByPartialIdx;
+		float scaleByPartialIdx;*/
 	public:
-		ADSR()
-		: startLevel(0), a(0), peakLevel(1), d(0), s(0), r(0), releaseLevel(0), scaleByPartialIdx(0) {}
+		ADSR() {
+			for (int i = 0; i < 5; ++i) {
+				levelsAndLengths[i][0] = 0;
+				levelsAndLengths[i][1] = 0;
+			}
+			// set peak to 1
+			levelsAndLengths[DecayMode][0] = 1;
+			// set lengths of sustain mode and end mode to infinity
+			levelsAndLengths[SustainMode][1] = INFINITY;
+			levelsAndLengths[EndMode][1] = INFINITY;
+		}
+		inline void setSegmentStartLevel(Mode mode, float value) {
+			levelsAndLengths[(unsigned)mode][0] = value;
+		}
+		inline void setSegmentLength(Mode mode, float value) {
+			levelsAndLengths[(unsigned)mode][1] = value;
+		}
 		inline void setStartLevel(float level) {
-			this->startLevel = level;
+			setSegmentStartLevel(AttackMode, level);
 		}
 		inline void setAttack(float attack) {
-			this->a = attack;
+			setSegmentLength(AttackMode, attack);
 		}
 		inline void setPeakLevel(float level) {
-			this->peakLevel = level;
+			setSegmentStartLevel(DecayMode, level);
 		}
 		inline void setDecay(float decay) {
-			this->d = decay;
+			setSegmentLength(AttackMode, decay);
 		}
-		inline void setSustain(float sustain) {
-			this->s = sustain;
+		inline void setSustain(float level) {
+			setSegmentStartLevel(SustainMode, level);
+			setSegmentStartLevel(ReleaseMode, level);
 		}
 		inline void setRelease(float release) {
-			this->r = release;
+			setSegmentLength(AttackMode, release);
 		}
 		inline void setReleaseLevel(float level) {
-			this->releaseLevel = level;
+			setSegmentStartLevel(EndMode, level);
 		}
 		inline void setScaleByPartialIdx(float s) {
 			this->scaleByPartialIdx = s;
