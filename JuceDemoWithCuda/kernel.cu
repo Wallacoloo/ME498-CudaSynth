@@ -15,134 +15,6 @@
 #define CIRCULAR_BUFFER_LEN MAX_DELAY_EFFECT_LENGTH
 
 namespace kernel {
-	// Must define our own generic complex class to run on both CPU and GPU.
-	// std::complex does not have __device__  defines, meaning it will only generate host code.
-	template <typename F> class ComplexT {
-		F _r, _i;
-	public:
-		__device__ __host__ ComplexT() : _r(0), _i(0) {}
-		__device__ __host__ ComplexT(F real, F imag) : _r(real), _i(imag) {}
-		__device__ __host__ ComplexT(F angleRad) {
-			sincosf(angleRad, &_i, &_r);
-		}
-		__device__ __host__ F real() const {
-			return _r;
-		}
-		__device__ __host__ F imag() const {
-			return _i;
-		}
-		__device__ __host__ F magSq() const {
-			return _r*_r + _i*_i;
-		}
-		__device__ __host__ F mag() const {
-			return sqrtf(magSq());
-		}
-		__device__ __host__ F phase() const {
-			return atan2(_i, _r);
-		}
-		__device__ __host__ ComplexT inverse() const {
-			// return 1.0/(this)
-			// 1 / (a+b*i) = (a-b*i) / (a^2+b^2)
-			return ComplexT(_r, -_i) / magSq();
-		}
-		__device__ __host__ ComplexT operator+(const ComplexT &other) const {
-			return ComplexT(_r + other._r, _i + other._i);
-		}
-		__device__ __host__ ComplexT& operator+=(const ComplexT &other) {
-			return (*this = (*this + other));
-		}
-		__device__ __host__ ComplexT operator*(const ComplexT &other) const {
-			//(a+bi)(c+di) = ac + adi + bci + bd(-1)
-			// = (ac-bd) + (ad+bc)i;
-			return ComplexT(_r*other._r - _i*other._i, _r*other._i + _i*other._r);
-		}
-		__device__ __host__ ComplexT operator*(F other) const {
-			return (*this) * ComplexT(other, 0);
-		}
-		__device__ __host__ ComplexT operator/(const ComplexT &other) const {
-			return (*this) * other.inverse();
-		}
-		__device__ __host__ ComplexT operator/(F other) const {
-			return (*this) * (1.f / other);
-		}
-		__device__ __host__ ComplexT& operator*=(const ComplexT &other) {
-			return (*this = (*this * other));
-		}
-		__device__ __host__ ComplexT& operator*=(F other)  {
-			return (*this) *= ComplexT(other, 0);
-		}
-		__device__ __host__ ComplexT& operator/=(const ComplexT &other) {
-			return (*this) *= other.inverse();
-		}
-		__device__ __host__ ComplexT& operator/=(F other) {
-			return (*this) *= (1.f / other);
-		}
-		__device__ __host__ ComplexT pow(F n) {
-			//(r*e^(i*phase))^n = r^n*e^(i*n*phase)
-			F newMag = powf(mag(), n);
-			F newPhase = phase()*n;
-			return ComplexT(newPhase)*newMag;
-		}
-	};
-
-	// Efficient way to compute successive sine values
-	/*class Sinusoidal {
-		// The partial has a phase function, phase(t).
-		// For constant frequency, phase(t) = w*t.
-		// We need varied frequency over time whenever the frequency changes.
-		// Thus, dp/dt = w0 + (w1-w0)/T*t, where T is the time over which the frequency should be altered.
-		// Write as dp/dt = w0 + kt
-		// and so each sample, the phase accumulator should be multiplied by e^i(w0+kt)
-		// This *can* be done efficiently.
-		// First, evaluate e^iw0 at the start of the block, store as dP/dt
-		//   Also evaluate e^ik(1) as d^2P/dt^2. Each sample, multiply dP/dt = dP/dt * d^2P/dt^2
-		
-		// Use complex float pairs to represent the phase functions
-		typedef ComplexT<float> PhaseT;
-		PhaseT phase;
-		PhaseT phasePrime;
-		PhaseT phaseDoublePrime;
-	public:
-		Sinusoidal() : phase(1, 0) {}
-		// transition from start frequency/depth to end frequency/depth over this block
-		__device__ __host__ void newFrequencyAndDepth(float startFreq, float endFreq, float startDepth, float endDepth) {
-			float wStart = INV_SAMPLE_RATE * startFreq;
-			float wEnd = INV_SAMPLE_RATE * endFreq;
-			PhaseT phasePrimeStart = PhaseT(wStart);
-			PhaseT phasePrimeEnd = PhaseT(wEnd);
-			phasePrime = phasePrimeStart;
-			// phasePrimeStart * doublePrime^BUFFER_BLOCK_SIZE = phasePrimeEnd
-			// (phasePrimeEnd/phasePrimeStart)^(1.0/BUFFER_BLOCK_SIZE) = doublePrime
-			// phaseDoublePrime = PhaseT(powf(phasePrimeEnd/phasePrimeStart, 1.0 / BUFFER_BLOCK_SIZE));
-			// Note: (a+bi)^n = (r*e^(i*p))^n = r^n*e^(i*n*p)
-			phaseDoublePrime = (phasePrimeEnd / phasePrimeStart).pow(1.f / BUFFER_BLOCK_SIZE);
-
-			// we must avoid the division by zero if the current depth is 0.
-			// to avoid this, we just prevent the desired depth from ever *being* zero. 
-			// In this way, we also don't lose track of position when the depth is toggled to 0
-			//   at the cost of some small inaccuracies under specific conditions
-			startDepth = max(0.0001, startDepth);
-			endDepth = max(0.0001, endDepth);
-			// We cannot transition from startDepth to endDepth linearly,
-			//   instead we multiply phase by some scalar each frame.
-			// so, mag(frame) = startDepth * k^frame
-			// and mag(b=BUFFER_BLOCK_SIZE) = endDepth
-			// endDepth = startDepth *k^b
-			// (endDepth/startDepth)^(1/b) = k
-			float k = powf(endDepth / startDepth, 1.f / BUFFER_BLOCK_SIZE);
-			// make current phase magnitude equal to startDepth
-			float mag = phase.mag();
-			float factor = startDepth / mag;
-			phase *= factor;
-			phasePrime *= k;
-		}
-		__device__ __host__ PhaseT next() {
-			phasePrime *= phaseDoublePrime;
-			phase *= phasePrime;
-			return phase;
-		}
-	};*/
-
 	class Sinusoidal {
 		// y(t) = mag(t)*sin(phase(t)), all t in frame offset from block start
 		// magnitude of sinusoid
@@ -152,6 +24,12 @@ namespace kernel {
 		// phase function coefficients:
 		// phase(t) = phase_c0 + phase_c1*t + phase_c2*t^2
 		float phase_c0, phase_c1, phase_c2;
+		__device__ __host__ float phaseAtIdx(unsigned idx) const {
+			return phase_c0 + idx*(phase_c1 + idx*phase_c2);
+		}
+		__device__ __host__ float magAtIdx(unsigned idx) const {
+			return mag_c0 + idx*mag_c1;
+		}
 	public:
 		Sinusoidal() : mag_c0(0), mag_c1(0), phase_c0(0), phase_c1(0), phase_c2(0) {}
 		// startFreq, endFreq given in rad/sec
@@ -171,12 +49,6 @@ namespace kernel {
 			float deltaDepth = endDepth - startDepth;
 			mag_c1 = deltaDepth * INV_BUFFER_BLOCK_SIZE;
 			
-		}
-		__device__ __host__ float phaseAtIdx(unsigned idx) const {
-			return phase_c0 + idx*(phase_c1 + idx*phase_c2);
-		}
-		__device__ __host__ float magAtIdx(unsigned idx) const {
-			return mag_c0 + idx*mag_c1;
 		}
 		__device__ __host__ float valueAtIdx(unsigned idx) const {
 			return magAtIdx(idx)*sinf(phaseAtIdx(idx));
@@ -198,6 +70,9 @@ namespace kernel {
 		float line0_c0, line0_c1, line1_c0, line1_c1;
 		__device__ __host__ ADSR::Mode nextMode(ADSR::Mode m) const {
 			return (ADSR::Mode)((unsigned)m + 1);
+		}
+		__device__ __host__ bool segmentFromIdx(unsigned idx) const {
+			return idx > toggleIdx;
 		}
 	public:
 		// initialized at the start of a note
@@ -234,9 +109,6 @@ namespace kernel {
 				toggleIdx = (line1_c0 - line0_c0) / line0_c1;
 			}
 		}
-		__device__ __host__ bool segmentFromIdx(unsigned idx) const {
-			return idx > toggleIdx;
-		}
 		__device__ __host__ bool isActiveAtEndOfBlock() const {
 			return ((unsigned)mode + segmentFromIdx(BUFFER_BLOCK_SIZE)) < (unsigned)ADSR::EndMode;
 		}
@@ -262,14 +134,11 @@ namespace kernel {
 			depthAdsrState.atBlockStart(depthAdsrStart, depthAdsrEnd, partialIdx, released);
 			// obtain the starting and ending frequency and depth.
 			// We will then just linearly interpolate over the block.
-			//float startFreq = freqAdsrState.next();
-			//float startDepth = depthAdsrState.next();
 			float startFreq = freqAdsrState.valueAtIdx(0);
 			float startDepth = depthAdsrState.valueAtIdx(0);
 			float endFreq = freqAdsrState.valueAtIdx(BUFFER_BLOCK_SIZE);
 			float endDepth = depthAdsrState.valueAtIdx(BUFFER_BLOCK_SIZE);
 			sinusoid.newFrequencyAndDepth(startFreq, endFreq, startDepth, endDepth);
-			//sinusoid.newFrequencyAndDepth(startFreq, startFreq, startDepth, startDepth);
 		}
 		__device__ __host__ float valueAtIdx(unsigned idx) const{
 			return sinusoid.valueAtIdx(idx);
@@ -343,8 +212,6 @@ namespace kernel {
 		float baseFreq = (partialIdx + 1)*fundamentalFreq;
 		float detuneStart = detuneEnvelope.valueAtIdx(0);
 		float detuneEnd = detuneEnvelope.valueAtIdx(BUFFER_BLOCK_SIZE);
-		//float detuneStart = 0.f;
-		//float detuneEnd = 0.f;
 
 		// configure the sinusoid to transition from the starting frequency to the end frequency
 		sinusoid.newFrequencyAndDepth(baseFreq*(1.f+detuneStart), baseFreq*(1.f+detuneEnd), 1.f, 1.f);
