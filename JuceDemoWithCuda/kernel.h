@@ -2,23 +2,27 @@
 #define KERNEL_H
 
 #include "defines.h"
+#include <algorithm> //for std::max
 
 namespace kernel {
 
 	class ADSR {
+	public:
 		enum Mode {
 			AttackMode = 0,
 			DecayMode = 1,
 			SustainMode = 2,
 			ReleaseMode = 3,
-			EndMode = 4,
+			EndMode = 4, // need padding for when trying to access past the end of the envelope
+			PastEndMode = 5,
 		};
+	private:
 		// essentially have 4 line segments:
 		// attack, decay, sustain, release
 		// each segment has a starting value and a length.
-		// release mode also has an ending value, which we accomplish with a 5th (constant) segment
+		// release mode also has an ending value, which we accomplish with a 5th & 6th (constant) segment
 		// sustain has infinite length, everything else has finite length.
-		float levelsAndLengths[5][2];
+		float levelsAndLengths[6][2];
 		float scaleByPartialIdx;
 		/*// level at t=0
 		float startLevel;
@@ -38,20 +42,43 @@ namespace kernel {
 	public:
 		ADSR() {
 			for (int i = 0; i < 5; ++i) {
-				levelsAndLengths[i][0] = 0;
-				levelsAndLengths[i][1] = 0;
+				setSegmentStartLevel((Mode)i, 0);
+				setSegmentLength((Mode)i, 0);
 			}
 			// set peak to 1
-			levelsAndLengths[DecayMode][0] = 1;
-			// set lengths of sustain mode and end mode to infinity
-			levelsAndLengths[SustainMode][1] = INFINITY;
-			levelsAndLengths[EndMode][1] = INFINITY;
+			setSegmentStartLevel(DecayMode, 1.f);
+			// set lengths of sustain mode and end mode to effective infinity
+			setSegmentLength(SustainMode, 1.0e6f);
+			setSegmentLength(EndMode, 1.0e6f);
+			setScaleByPartialIdx(0);
 		}
 		inline void setSegmentStartLevel(Mode mode, float value) {
-			levelsAndLengths[(unsigned)mode][0] = value;
+			// certain logic in the kernel may require that each segment have non-zero slope
+			if (mode != AttackMode && levelsAndLengths[(unsigned)mode - 1][0] == value) {
+				setSegmentStartLevel(mode, value + 0.00001);
+			} else if (mode != PastEndMode && levelsAndLengths[(unsigned)mode + 1][0] == value) {
+				setSegmentStartLevel(mode, value + 0.00001);
+			} else {
+				levelsAndLengths[(unsigned)mode][0] = value;
+			}
 		}
 		inline void setSegmentLength(Mode mode, float value) {
+			// certain logic in the kernel may require that each segment have finite slope
+			//   or a minimum length
+			value = std::max(value, INV_SAMPLE_RATE*BUFFER_BLOCK_SIZE);
 			levelsAndLengths[(unsigned)mode][1] = value;
+		}
+		inline HOST DEVICE float getSegmentStartLevel(Mode mode) const {
+			return levelsAndLengths[(unsigned)mode][0];
+		}
+		inline HOST DEVICE float getSegmentLength(Mode mode, unsigned partialIdx=0) const {
+			return levelsAndLengths[(unsigned)mode][1] * getTimeScaleFor(partialIdx);
+		}
+		inline HOST DEVICE float getSegmentSlope(Mode mode, unsigned partialIdx = 0) const {
+			float y0 =  getSegmentStartLevel(mode);
+			float y1 = getSegmentStartLevel((Mode)((unsigned)mode + 1));
+			float length = getSegmentLength(mode, partialIdx);
+			return (y1 - y0) / length;
 		}
 		inline void setStartLevel(float level) {
 			setSegmentStartLevel(AttackMode, level);
@@ -63,50 +90,42 @@ namespace kernel {
 			setSegmentStartLevel(DecayMode, level);
 		}
 		inline void setDecay(float decay) {
-			setSegmentLength(AttackMode, decay);
+			setSegmentLength(DecayMode, decay);
 		}
 		inline void setSustain(float level) {
 			setSegmentStartLevel(SustainMode, level);
 			setSegmentStartLevel(ReleaseMode, level);
 		}
 		inline void setRelease(float release) {
-			setSegmentLength(AttackMode, release);
+			setSegmentLength(ReleaseMode, release);
 		}
 		inline void setReleaseLevel(float level) {
 			setSegmentStartLevel(EndMode, level);
+			setSegmentStartLevel(PastEndMode, level);
 		}
 		inline void setScaleByPartialIdx(float s) {
 			this->scaleByPartialIdx = s;
 		}
 		inline HOST DEVICE float getStartLevel() const {
-			return startLevel;
+			return getSegmentStartLevel(AttackMode);
 		}
 		inline HOST DEVICE float getAttack() const {
-			return a;
-		}
-		inline HOST DEVICE float getAttackFor(unsigned partialIdx) const {
-			return a * getTimeScaleFor(partialIdx);
+			return getSegmentLength(AttackMode);
 		}
 		inline HOST DEVICE float getPeakLevel() const {
-			return peakLevel;
+			return getSegmentStartLevel(DecayMode);
 		}
 		inline HOST DEVICE float getDecay() const {
-			return d;
-		}
-		inline HOST DEVICE float getDecayFor(unsigned partialIdx) const {
-			return d * getTimeScaleFor(partialIdx);
+			return getSegmentLength(DecayMode);
 		}
 		inline HOST DEVICE float getSustain() const {
-			return s;
+			return getSegmentStartLevel(SustainMode);
 		}
 		inline HOST DEVICE float getRelease() const {
-			return r;
-		}
-		inline HOST DEVICE float getReleaseFor(unsigned partialIdx) const {
-			return r * getTimeScaleFor(partialIdx);
+			return getSegmentLength(ReleaseMode);
 		}
 		inline HOST DEVICE float getReleaseLevel() const {
-			return releaseLevel;
+			return getSegmentStartLevel(EndMode);
 		}
 		inline HOST DEVICE float getScaleByPartialIdx() const {
 			return scaleByPartialIdx;

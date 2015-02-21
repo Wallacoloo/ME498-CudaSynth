@@ -183,274 +183,67 @@ namespace kernel {
 		}
 	};
 
-	// Efficient way to compute sequential ADSR values
-	/*class ADSRState {
-		enum Mode {
-			AttackMode,
-			DecayMode,
-			SustainMode,
-			ReleaseMode,
-			EndMode,
-		};
-		Mode mode;
-		float value;
-		// attack approach #1 (makes more sense in the context where dv2/dt = infinity)
-		// attackTime(t) = a1 + (a2-a1)*t/deltaT
-		// dv/dt = 1.0/attackTime(t)
-		// dv/dt = 1.0/(a1 + (a2-a1)*t/deltaT)
-		// However, this is difficult to compute efficiently
-
-		// attack approach #2
-		// in attack mode, we increase value by dv/dt, if the attack is constant.
-		// but if attack is changing, then we want to interpolate the dv1/dt and dv2/dt
-		// Thus, we have dv/dt = dv1/dt + (dv2/dt-dv1/dt)*t
-		// Or, each sample, dv/dt += (dv2/dt-dv1/dt)
-		float attackPrime;
-		float attackDoublePrime;
-
-		// Level at which to transition from attack to decay
-		float peakLevel;
-		float peakLevelPrime;
-
-		// decay approach (a bit more difficult, since depends on changing sustain levels too).
-		// calculate dv1/dt and dv2/dt just as in attack approach #2, based on the start decay&sustain and the end decay&sustain.
-		// Then apply same algorithm.
-		float decayPrime;
-		float decayDoublePrime;
-
-		// sustain approach
-		// calculate sustain1 and sustain2.
-		// then sustainLevel = sustain1 + (sustain2-sustain1)*t/deltaT
-		float sustainLevel;
-		float sustainPrime;
-
-		// For release, use the same approach as the decay.
-		float releasePrime;
-		float releaseDoublePrime;
-		// also need to track the end value (usually 0).
-		float releaseLevel;
-		float releaseLevelPrime;
-		// need to track the value at release time in order to update release-related variables at each block
-		float valueAtRelease;
-	public:
-		// initialized at the start of a note
-		ADSRState() : mode(AttackMode), value(0.f) {}
-		// call at block begin to precompute values.
-		__device__ __host__ void atBlockStart(ADSR *start, ADSR *end, unsigned partialIdx, bool released) {
-			if (mode == EndMode) {
-				return;
-			}
-			float startBaseLevel =    start->getStartLevel();
-			float startAttack =       start->getAttackFor(partialIdx);
-			float startPeakLevel =    start->getPeakLevel();
-			float startDecay =        start->getDecayFor(partialIdx);
-			float startSustain =      start->getSustain();
-			float startRelease =      start->getReleaseFor(partialIdx);
-			float startReleaseLevel = start->getReleaseLevel();
-			float endBaseLevel =      end->getStartLevel();
-			float endAttack =         end->getAttackFor(partialIdx);
-			float endPeakLevel =      end->getPeakLevel();
-			float endDecay =          end->getDecayFor(partialIdx);
-			float endSustain =        end->getSustain();
-			float endRelease =        end->getReleaseFor(partialIdx);
-			float endReleaseLevel =   end->getReleaseLevel();
-			float beginReleaseLevelStart, beginReleaseLevelEnd;
-			// handle cases where there is no attack or decay without introducing impulses
-			if (mode == AttackMode && startAttack == 0.f) {
-				value = startPeakLevel;
-				mode = DecayMode;
-			}
-			if (mode == DecayMode && startDecay == 0.f) {
-				value = startSustain;
-				mode = SustainMode;
-			}
-			if (released && mode != ReleaseMode) {
-				mode = ReleaseMode;
-				// release starts from current value
-				beginReleaseLevelStart = value;
-				beginReleaseLevelEnd = value;
-				valueAtRelease = value;
-			} else if (released && mode == ReleaseMode) {
-				beginReleaseLevelStart = valueAtRelease;
-				beginReleaseLevelEnd = valueAtRelease;
-			} else {
-				// release will start from the sustain value
-				beginReleaseLevelStart = startRelease;
-				beginReleaseLevelEnd = endRelease;
-			}
-			// Calculate attack parameters.
-			// dv/dt1 = (startPeakLevel-startBaseLevel)
-			// dv/dt2 = (endPeakLevel-endBaseLevel)
-			// dv/dt = dv/dt1 + t/deltaT*(dv/dt2-dv/dt1) + (endBaseLevel-startBaseLevel)/deltaT
-			float dv_dtInSecondsAtAttack = (startPeakLevel-startBaseLevel) / max(startAttack, INV_SAMPLE_RATE);
-			float dBaseLevel_dtInSeconds = (endBaseLevel - startBaseLevel) / max(startAttack, INV_SAMPLE_RATE);
-			attackPrime = INV_SAMPLE_RATE * (dv_dtInSecondsAtAttack + dBaseLevel_dtInSeconds);
-			float dv_dtInSecondsAtAttack2 = (endPeakLevel-endBaseLevel) / max(endAttack, INV_SAMPLE_RATE);
-			float dv_dt2_minus_dv_dt1InSecondsAtAttack = dv_dtInSecondsAtAttack2 - dv_dtInSecondsAtAttack;
-			attackDoublePrime = INV_SAMPLE_RATE * dv_dt2_minus_dv_dt1InSecondsAtAttack;
-			// Calculate peak level
-			peakLevel = startPeakLevel;
-			peakLevelPrime = INV_BUFFER_BLOCK_SIZE * (endPeakLevel - startPeakLevel);
-			// Calculate delay parameters
-			float dv_dtInSecondsAtDecay = (startSustain-startPeakLevel) / max(startDecay, INV_SAMPLE_RATE);
-			float dPeakLevel_dtInSeconds = (endPeakLevel - startPeakLevel) / max(startDecay, INV_SAMPLE_RATE);
-			decayPrime = INV_SAMPLE_RATE * (dv_dtInSecondsAtDecay + dPeakLevel_dtInSeconds);
-			float dv_dtInSecondsAtDecay2 = (endSustain - endPeakLevel) / max(endDecay, INV_SAMPLE_RATE);
-			float dv_dt2_minus_dv_dt1InSecondsAtDecay = dv_dtInSecondsAtDecay2 - dv_dtInSecondsAtDecay;
-			decayDoublePrime = INV_SAMPLE_RATE * dv_dt2_minus_dv_dt1InSecondsAtDecay;
-			// Calculate sustain parameters
-			sustainLevel = startSustain;
-			sustainPrime = INV_BUFFER_BLOCK_SIZE * (endSustain - startSustain);
-			// Calculate release parameters
-			float dv_dtInSecondsAtRelease = (startReleaseLevel - beginReleaseLevelStart) / max(startRelease, INV_SAMPLE_RATE);
-			float dReleaseLevel_dtInSeconds = (endReleaseLevel - startReleaseLevel) / max(startRelease, INV_SAMPLE_RATE);
-			releasePrime = INV_SAMPLE_RATE * (dv_dtInSecondsAtRelease + dReleaseLevel_dtInSeconds);
-			float dv_dtInSecondsAtRelease2 = (endReleaseLevel - beginReleaseLevelEnd) / max(endRelease, INV_SAMPLE_RATE);
-			float dv_dt2_minus_dv_dt1InSecondsAtRelease = dv_dtInSecondsAtRelease2 - dv_dtInSecondsAtRelease;
-			releaseDoublePrime = INV_SAMPLE_RATE * dv_dt2_minus_dv_dt1InSecondsAtRelease;
-			releaseLevel = startReleaseLevel;
-			releaseLevelPrime = INV_BUFFER_BLOCK_SIZE * (endReleaseLevel - startReleaseLevel);
-		}
-		__device__ __host__ bool isActive() const {
-			return mode != EndMode;
-		}
-		__device__ __host__ float next() {
-			sustainLevel += sustainPrime;
-			releaseLevel += releaseLevelPrime;
-			switch (mode) {
-			case AttackMode:
-				value += attackPrime;
-				attackPrime += attackDoublePrime;
-				peakLevel += peakLevelPrime;
-				// check if it's time to move to the next mode or if value concave-down & no longer increasing
-				if (value >= peakLevel || attackPrime < 0) {
-					value = peakLevel;
-					mode = DecayMode;
-				}
-				break;
-			case DecayMode:
-				value += decayPrime;
-				decayPrime += decayDoublePrime;
-				// check if it's time to move to the next mode or if value is concave-up & no longer decreasing
-				if (value < sustainLevel || decayPrime > 0) {
-					value = sustainLevel;
-					mode = SustainMode;
-				}
-				break;
-			case SustainMode:
-				// must update value to the new sustain level computed above
-				value = sustainLevel;
-				break;
-			case ReleaseMode:
-				value += releasePrime;
-				releasePrime += releaseDoublePrime;
-				// check if it's time to move to the next mode or if value is concave-up & no longer decreasing
-				if (value <= releaseLevel || releasePrime > 0) {
-					value = releaseLevel;
-					mode = EndMode;
-				}
-				break;
-			default:
-			case EndMode:
-				value = releaseLevel;
-				break;
-			}
-			return value;
-		}
-	};*/
 	class ADSRState {
-		enum Mode {
-			AttackMode=0,
-			DecayMode=1,
-			SustainMode=2,
-			ReleaseMode=3,
-			EndMode=4,
-		};
 		// mode at start of block
-		Mode mode;
+		ADSR::Mode mode;
 		// break each mode into a line
 		// during the attack/decay mode, 
 		//   the block may be up to 2 lines during the block. During sustain/release, just one line.
 		// actually, for sufficiently short attack/decay, the note may transition from attack->decay->sustain in one single block
 		// The best way to handle this is to define the function like:
 		// value(t) = (t <= toggleTime)*(line0_c0+line0_c1*t) + !(t <= toggleTime)*(line1_c0+line1_c1*t)
-		unsigned toggleIdx;
+		// toggleIdx must be signed for an easier release mode implementation
+		int toggleIdx;
 		// segment coefficients
 		float line0_c0, line0_c1, line1_c0, line1_c1;
+		__device__ __host__ ADSR::Mode nextMode(ADSR::Mode m) const {
+			return (ADSR::Mode)((unsigned)m + 1);
+		}
 	public:
 		// initialized at the start of a note
-		ADSRState() : mode(AttackMode), toggleIdx(BUFFER_BLOCK_SIZE), line0_c0(0), line0_c1(0), line1_c0(0), line1_c1(0) {}
+		ADSRState() : mode(ADSR::AttackMode), toggleIdx(BUFFER_BLOCK_SIZE), line0_c0(0), line0_c1(0), line1_c0(0), line1_c1(0) {}
 		__device__ __host__ void atBlockStart(ADSR *start, ADSR *end, unsigned partialIdx, bool released) {
 			// get the last value from the previous buffer & increment the mode if needed.
 			line0_c0 = valueAtIdx(BUFFER_BLOCK_SIZE);
-			mode = (Mode)((unsigned)mode + (mode != EndMode && (BUFFER_BLOCK_SIZE > toggleIdx)));
-			// TODO: reduce the below to lookups into the ADSR
-			// TODO: segments are not linear; they are quadratic
-			// i.e. level0 = start->getLevelFor(mode, partialIdx),
-			// level1 = start->getLevelFor(mode+1, partialIdx),
-			// ...
-			// attack segment
-			float attackTime0 = max(INV_BUFFER_BLOCK_SIZE, start->getAttackFor(partialIdx));
-			float attackDeltaY0 = start->getPeakLevel() - start->getStartLevel();
-			float attackSlope0 = attackDeltaY0 / attackTime0;
-			float attackTime1 = max(INV_BUFFER_BLOCK_SIZE, end->getAttackFor(partialIdx));
-			float attackDeltaY1 = end->getPeakLevel() - end->getStartLevel();
-			float attackSlope1 = attackDeltaY1 / attackTime1;
-			float attack0 = start->getStartLevel();
-			float attack1 = 0.5f*(attackSlope1 + attackSlope0) * INV_BUFFER_BLOCK_SIZE;
-			// decay segment
-			float decayTime0 = max(INV_BUFFER_BLOCK_SIZE, start->getDecayFor(partialIdx));
-			float decayDeltaY0 = start->getSustain() - start->getPeakLevel();
-			float decaySlope0 = decayDeltaY0 / decayTime0;
-			float decayTime1 = max(INV_BUFFER_BLOCK_SIZE, end->getDecayFor(partialIdx));
-			float decayDeltaY1 = end->getSustain() - end->getPeakLevel();
-			float decaySlope1 = decayDeltaY1 / decayTime1;
-			float decay0 = start->getPeakLevel();
-			float decay1 = 0.5f*(decaySlope1 + decaySlope0) * INV_BUFFER_BLOCK_SIZE;
-			// sustain segment
-			float sustain0 = start->getSustain();
-			float sustainDelta = end->getSustain() - sustain0;
-			float sustain1 = sustainDelta * INV_BUFFER_BLOCK_SIZE;
-			// release segment
-			float releaseTime0 = max(INV_BUFFER_BLOCK_SIZE, start->getReleaseFor(partialIdx));
-			float releaseDeltaY0 = start->getReleaseLevel() - start->getSustain();
-			float releaseSlope0 = releaseDeltaY0 / releaseTime0;
-			float releaseTime1 = max(INV_BUFFER_BLOCK_SIZE, end->getReleaseFor(partialIdx));
-			float releaseDeltaY1 = end->getReleaseLevel() - end->getSustain();
-			float releaseSlope1 = releaseDeltaY1 / releaseTime1;
-			float release0 = start->getReleaseLevel();
-			float release1 = 0.5f*(releaseSlope1 + releaseSlope0) * INV_BUFFER_BLOCK_SIZE;
-			// end segment
-			float endMode0 = start->getReleaseLevel();
-			float endModeDelta = end->getReleaseLevel() - endMode0;
-			float endMode1 = endModeDelta * INV_BUFFER_BLOCK_SIZE;
-			float modeCoeffs[][2] = {
-				{ attack0, attack1 },
-				{ decay0, decay1 },
-				{ sustain0, sustain1 },
-				{ release0, release1 },
-				{ endMode0, endMode1 },
-				{ endMode0, endMode1 }};
-			line0_c1 = modeCoeffs[(unsigned)mode][1];
-			line1_c0 = modeCoeffs[(unsigned)mode+1][0];
-			line1_c1 = modeCoeffs[(unsigned)mode+1][1];
-			// solve for toggleIdx:
-			// line0(toggleIdx) = line1(toggleIdx)
-			// line0_c0 + toggleIdx*line0_c1 = line1_c0 + toggleIdx*line1_c1
-			// line0_c0 - line1_c0 = toggleIdx*(line1_c1-line0_c1)
-			// TODO: ensure line1_c1 never equal to line0_c1
-			toggleIdx = (line0_c0 - line1_c0) / (line1_c1 - line0_c1);
+			// increment the mode if we passed the toggleIdx last buffer
+			mode = (ADSR::Mode)((unsigned)mode + ((unsigned)mode < (unsigned)ADSR::EndMode && segmentFromIdx(BUFFER_BLOCK_SIZE) == 1));
+			// shift toggleIdx - necessary if in release mode, else has no effect.
+			toggleIdx -= BUFFER_BLOCK_SIZE;
+			if (released && (unsigned)mode < (unsigned)ADSR::ReleaseMode) {
+				// change to release mode if the note was released and is in either the attack, decay or sustain mode
+				// release must be handled explicitly because the slope depends on the current value obtained.
+				mode = ADSR::ReleaseMode;
+				float releaseTime = start->getSegmentLength(ADSR::ReleaseMode, partialIdx);
+				float endLevel = start->getSegmentStartLevel(ADSR::EndMode);
+				float deltaY = endLevel - line0_c0;
+				line0_c1 = deltaY / (releaseTime*SAMPLE_RATE);
+				line1_c0 = endLevel;
+				line1_c1 = 0;
+				toggleIdx = releaseTime*SAMPLE_RATE;
+			} else if (mode != ADSR::ReleaseMode) {
+				// TODO: segments are not linear; they are quadratic
+				float startSlope0 = start->getSegmentSlope(mode, partialIdx);
+				float startTrigLevel = start->getSegmentStartLevel(nextMode(mode));
+				line0_c1 = startSlope0*INV_SAMPLE_RATE;
+				float startSlope1 = start->getSegmentSlope(nextMode(mode), partialIdx);
+				line1_c0 = startTrigLevel;
+				line1_c1 = startSlope1*INV_SAMPLE_RATE;
+				// line0(toggleIdx) == line1(toggleIdx)
+				// line0_c0 + line0_c1*toggleIdx = line1_c0 + line1_c1*(toggleIdx-toggleIdx);
+				// line0_c1*toggleIdx = line1_c0 - line0_c0
+				toggleIdx = (line1_c0 - line0_c0) / line0_c1;
+			}
 		}
 		__device__ __host__ bool segmentFromIdx(unsigned idx) const {
 			return idx > toggleIdx;
 		}
 		__device__ __host__ bool isActiveAtEndOfBlock() const {
-			return (unsigned)mode + segmentFromIdx(BUFFER_BLOCK_SIZE) < (unsigned)EndMode;
+			return ((unsigned)mode + segmentFromIdx(BUFFER_BLOCK_SIZE)) < (unsigned)ADSR::EndMode;
 		}
 		__device__ __host__ float valueAtIdx(unsigned idx) const {
 			// return the first line evaluated at idx if idx < toggleIdx, else evaluate the second line at idx
 			bool seg = segmentFromIdx(idx);
-			return (!seg)*(line0_c0 + idx*line0_c1) + (seg)*(line1_c0 + idx*line0_c1);
+			return (!seg)*(line0_c0 + idx*line0_c1) + (seg)*(line1_c0 + (idx-toggleIdx)*line1_c1);
 		}
 	};
 
@@ -490,12 +283,6 @@ namespace kernel {
 			adsr.atBlockStart(envStart->getAdsr(), envEnd->getAdsr(), partialIdx, released);
 			lfo.atBlockStart(envStart->getLfo(), envEnd->getLfo(), partialIdx, released);
 		}
-		/*__device__ __host__ float nextAsProduct() {
-			return adsr.next() * (1 + lfo.next());
-		}
-		__device__ __host__ float nextAsSum() {
-			return adsr.next() + lfo.next();
-		}*/
 		__device__ __host__ float productAtIdx(unsigned idx) const {
 			return adsr.valueAtIdx(idx) * (1 + lfo.valueAtIdx(idx));
 		}
@@ -513,9 +300,6 @@ namespace kernel {
 		__device__ __host__ void atBlockStart(DetuneEnvelope *envStart, DetuneEnvelope *envEnd, unsigned partialIdx, bool released) {
 			adsrLfoState.atBlockStart(envStart->getAdsrLfo(), envEnd->getAdsrLfo(), partialIdx, released);
 		}
-		/*__device__ __host__ float next() {
-			return adsrLfoState.nextAsSum();
-		}*/
 		__device__ __host__ float valueAtIdx(unsigned idx) const {
 			return adsrLfoState.sumAtIdx(idx);
 		}
@@ -722,7 +506,7 @@ namespace kernel {
 		int totalBytesToCopy = sizeof(ParameterStates);
 		int numTransfers = (totalBytesToCopy + transferSize - 1) / transferSize;
 		int numTransfersPerThread = (numTransfers + NUM_PARTIALS - 1) / NUM_PARTIALS;*/
-		if (partialIdx == 0) {
+		if (partialIdx == NUM_PARTIALS-1) {
 			// TODO: only do this copy if the parameters have changed
 			memcpy(&voiceState->parameterInfo.start, &voiceState->parameterInfo.end, sizeof(ParameterStates));
 		}
