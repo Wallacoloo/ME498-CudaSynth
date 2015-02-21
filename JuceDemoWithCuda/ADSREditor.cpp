@@ -31,12 +31,38 @@ static const float (*parameterBoundsFromOptions(ADSREditor::KnobLimits opt))[2] 
 }
 
 ADSREditor::ADSREditor(PluginEditor *editor, ADSR *adsr, const char* editorLabel, KnobTypes knobTypes, KnobLimits knobLimits)
-	: ParameterEditor(editor, editorLabel, labelNames, parameterBoundsFromOptions(knobLimits), usableIndicesFromOptions(knobTypes)), adsr(adsr) {
+	: ParameterEditor(editor, editorLabel, labelNames, parameterBoundsFromOptions(knobLimits), usableIndicesFromOptions(knobTypes)), 
+	adsr(adsr) {
+	// sync GUI with parameter values
+	refreshSliderValues();
 }
 
 
 ADSREditor::~ADSREditor()
 {
+}
+
+float ADSREditor::getParameterValue(int parameterNum) const {
+	switch (parameterNum) {
+	case 0:
+		return adsr->getStartLevel();
+	case 1:
+		return adsr->getAttack();
+	case 2:
+		return adsr->getPeakLevel();
+	case 3:
+		return adsr->getDecay();
+	case 4:
+		return adsr->getSustain();
+	case 5: 
+		return adsr->getRelease();
+	case 6:
+		return adsr->getReleaseLevel();
+	case 7:
+		return adsr->getScaleByPartialIdx();
+	default:
+		return 0.f;
+	}
 }
 
 void ADSREditor::onParameterChanged(int parameterNum, float value) {

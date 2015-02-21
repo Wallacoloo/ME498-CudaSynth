@@ -81,6 +81,14 @@ void ParameterEditor::sliderValueChanged(Slider *slider) {
 	}
 }
 
+void ParameterEditor::refreshSliderValues() {
+	// sync the GUI with the stored slider values
+	for (int i = 0; i < nSliders; ++i) {
+		float value = getParameterValue(parameterIndexMap[i]);
+		sliders[i].setValue(value, sendNotification);
+	}
+}
+
 void ParameterEditor::paint(Graphics& g)
 {
 	// fill a background

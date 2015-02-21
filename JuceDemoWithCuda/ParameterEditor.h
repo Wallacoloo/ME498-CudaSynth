@@ -23,7 +23,9 @@ public:
 	~ParameterEditor();
 	void sliderValueChanged(Slider*) override;
 	void resized() override;
+	void refreshSliderValues();
 	virtual void onParameterChanged(int parameterNum, float value) = 0;
+	virtual float getParameterValue(int parameterNum) const = 0;
 };
 
 #endif

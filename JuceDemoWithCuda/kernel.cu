@@ -160,8 +160,8 @@ namespace kernel {
 			// first, carry over the phase from the end of the previous buffer.
 			phase_c0 = phaseAtIdx(BUFFER_BLOCK_SIZE);
 			// initial slope is w0
-			phase_c1 = startFreq*INV_BUFFER_BLOCK_SIZE;
-			float endW = endFreq*INV_BUFFER_BLOCK_SIZE;
+			phase_c1 = startFreq*INV_SAMPLE_RATE;
+			float endW = endFreq*INV_SAMPLE_RATE;
 			// phase'(BUFFER_BLOCK_SIZE) = endW
 			// phase_c1 + 2*t*phase_c2 = endW
 			// phase_c2 = (endW - phase_c1) / (2*BUFFER_BLOCK_SIZE)
@@ -269,6 +269,7 @@ namespace kernel {
 			float endFreq = freqAdsrState.valueAtIdx(BUFFER_BLOCK_SIZE);
 			float endDepth = depthAdsrState.valueAtIdx(BUFFER_BLOCK_SIZE);
 			sinusoid.newFrequencyAndDepth(startFreq, endFreq, startDepth, endDepth);
+			//sinusoid.newFrequencyAndDepth(startFreq, startFreq, startDepth, startDepth);
 		}
 		__device__ __host__ float valueAtIdx(unsigned idx) const{
 			return sinusoid.valueAtIdx(idx);
@@ -342,6 +343,8 @@ namespace kernel {
 		float baseFreq = (partialIdx + 1)*fundamentalFreq;
 		float detuneStart = detuneEnvelope.valueAtIdx(0);
 		float detuneEnd = detuneEnvelope.valueAtIdx(BUFFER_BLOCK_SIZE);
+		//float detuneStart = 0.f;
+		//float detuneEnd = 0.f;
 
 		// configure the sinusoid to transition from the starting frequency to the end frequency
 		sinusoid.newFrequencyAndDepth(baseFreq*(1.f+detuneStart), baseFreq*(1.f+detuneEnd), 1.f, 1.f);

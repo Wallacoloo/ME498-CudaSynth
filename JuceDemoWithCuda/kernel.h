@@ -41,15 +41,24 @@ namespace kernel {
 		float scaleByPartialIdx;*/
 	public:
 		ADSR() {
-			for (int i = 0; i < 5; ++i) {
-				setSegmentStartLevel((Mode)i, 0);
-				setSegmentLength((Mode)i, 0);
-			}
-			// set peak to 1
-			setSegmentStartLevel(DecayMode, 1.f);
-			// set lengths of sustain mode and end mode to effective infinity
+			// set start level to 0 & attack to 0
+			setStartLevel(0.f);
+			setAttack(0.f);
+			// set peak to 1 & decay to 0
+			// setSegmentStartLevel(DecayMode, 1.f);
+			setPeakLevel(1.f);
+			setDecay(0.f);
+			// set length sustain mode to effective infinity
 			setSegmentLength(SustainMode, 1.0e6f);
+			// set sustain level to 1.0
+			setSustain(1.f);
+			// set release level & length to 0
+			setReleaseLevel(0.f);
+			setRelease(0.f);
+			// set length of EndMode & PastEndMode to effective infinity
 			setSegmentLength(EndMode, 1.0e6f);
+			setSegmentLength(PastEndMode, 1.0e6f);
+			// default to no scaling by partial index.
 			setScaleByPartialIdx(0);
 		}
 		inline void setSegmentStartLevel(Mode mode, float value) {

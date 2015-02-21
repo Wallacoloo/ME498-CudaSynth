@@ -23,6 +23,7 @@ public:
 	ADSREditor(PluginEditor *editor, ADSR *adsr, const char* editorLabel, KnobTypes knobTypes, KnobLimits knobLimits);
 	~ADSREditor();
 	void onParameterChanged(int parameterNum, float value) override;
+	float getParameterValue(int parameterNum) const override;
 };
 
 #endif
