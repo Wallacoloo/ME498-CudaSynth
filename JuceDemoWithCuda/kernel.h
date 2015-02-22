@@ -41,6 +41,9 @@ namespace kernel {
 		float scaleByPartialIdx;*/
 	public:
 		ADSR() {
+			// Sustain, EndMode must still have a finite length; set it to something absurdly long
+			// Don't make it too lengthy though, or rounding errors may occur in future parts of the kernel.
+			float longDuration = 2048.f;
 			// set start level to 0 & attack to 0
 			setStartLevel(0.f);
 			setAttack(0.f);
@@ -49,15 +52,15 @@ namespace kernel {
 			setPeakLevel(1.f);
 			setDecay(0.f);
 			// set length sustain mode to effective infinity
-			setSegmentLength(SustainMode, 1.0e6f);
+			setSegmentLength(SustainMode, longDuration);
 			// set sustain level to 1.0
 			setSustain(1.f);
 			// set release level & length to 0
 			setReleaseLevel(0.f);
 			setRelease(0.f);
 			// set length of EndMode & PastEndMode to effective infinity
-			setSegmentLength(EndMode, 1.0e6f);
-			setSegmentLength(PastEndMode, 1.0e6f);
+			setSegmentLength(EndMode, longDuration);
+			setSegmentLength(PastEndMode, longDuration);
 			// default to no scaling by partial index.
 			setScaleByPartialIdx(0);
 		}

@@ -88,11 +88,15 @@ namespace kernel {
 		__device__ __host__ ADSR::Mode nextMode(ADSR::Mode m) const {
 			return (ADSR::Mode)((unsigned)m + 1);
 		}
-		__device__ __host__ float pFromIdx(unsigned idx) const {
+		__device__ __host__ float pFromIdx(float idx) const {
 			return P + idx*line0_invLength;
 		}
 		__device__ __host__ bool segmentFromP(float pIdx) const {
 			return pIdx >= (unsigned)nextMode(getMode());
+		}
+		__device__ __host__ float interpolate(float position, float a, float b) const {
+			// construct a function where f(0) = a, f(1) = b, and return f(position)
+			return a + (b - a)*position;
 		}
 	public:
 		// initialized at the start of a note
@@ -111,23 +115,29 @@ namespace kernel {
 			// if we're released, skip to release mode (or further)
 			P = max(P, released*(float)(unsigned)ADSR::ReleaseMode);
 			// update slope of segment and rate at which we progress:
-			line0_invLength = 1.f / end->getSegmentLength(getMode(), partialIdx) * INV_SAMPLE_RATE;
+			float line0_length = end->getSegmentLength(getMode(), partialIdx) * SAMPLE_RATE;
+			line0_invLength = 1.f / line0_length;
 			float line1_length = end->getSegmentLength(nextMode(getMode()), partialIdx) * SAMPLE_RATE;
 			line1_invLength = 1.f / line1_length;
+			// calculate endpoint values for our lines
+			float line0_relPositionAtBufferBlockSize = pFromIdx(BUFFER_BLOCK_SIZE) - (float)(unsigned)getMode();
+			float line0_valueAtBufferBlockSize = interpolate(line0_relPositionAtBufferBlockSize, end->getSegmentStartLevel(getMode()), end->getSegmentStartLevel(nextMode(getMode())));
 			float line1_startValue = end->getSegmentStartLevel(nextMode(getMode()));
 			// update c0 and c1 based on the following constraints:
 			// value(P) == prevValue
-			// value(floor(P+1)) == endValue
+			// value(pFromIdx(BUFFER_BLOCK_SIZE)) == line0_valueAtBufferBlockSize
 			// c0 + c1*P == prevValue
 			// c0 + c1*P2 == endValue
 			// c1*(P2-P) == endValue-prevValue -> c1 = (endValue-prevValue)/(P2-P)
 			// c0 = prevValue - c1*P;
-			unsigned endP = (unsigned)nextMode(getMode());
-			line0_c1 = (line1_startValue - prevValue) / (endP - P);
+			// line0_c1 = (line0_valueAtBufferBlockSize - prevValue) / (pFromIdx(BUFFER_BLOCK_SIZE) - P);
+			// line0_c1 = (line0_valueAtBufferBlockSize - prevValue) / (BUFFER_BLOCK_SIZE*line0_invLength);
+			line0_c1 = (line0_valueAtBufferBlockSize - prevValue) * line0_length * INV_BUFFER_BLOCK_SIZE;
 			line0_c0 = prevValue - line0_c1*P;
 			// then calculate the coefficients for the second portion of the line
 			// line1(endP) == startVal
 			// line1(endP+length1*sample_rate*IL0) == endVal
+			unsigned endP = (unsigned)nextMode(getMode());
 			float line1_endValue = end->getSegmentStartLevel(nextMode(nextMode(getMode())));
 			// c0 + c1*endP == startVal
 			// c0 + c1*endP + c1*length1*IL0 == endVal
