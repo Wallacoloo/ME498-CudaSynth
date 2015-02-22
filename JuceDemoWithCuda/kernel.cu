@@ -56,66 +56,101 @@ namespace kernel {
 	};
 
 	class ADSRState {
-		// mode at start of block
-		ADSR::Mode mode;
+		// better approach (not yet implemented):
+		//   upon ADSR change:
+		//     determine the current segment, current length, current value and current time (current time MUST be stored)
+		//     determine the new end value and new length
+		//     alter coefficients such that current values match and so that the end value will be reached at the new length.
+		// proportion of way through ADSR envelope at start;
+		// 0 <= P < 1 for attack phase,
+		// 1 <= P < 2 for decay phase,
+		// 2 <= P < 3 for sustain phase,
+		// 3 <= P < 4 for release phase,
+		// 4 <= P indicates note end.
+		float P;
 		// break each mode into a line
 		// during the attack/decay mode, 
 		//   the block may be up to 2 lines during the block. During sustain/release, just one line.
 		// actually, for sufficiently short attack/decay, the note may transition from attack->decay->sustain in one single block
+		// in this case, it is sufficient to clamp the index to the point at which we switch from decay to sustain mode, since decay(last) == sustain
 		// The best way to handle this is to define the function like:
-		// value(t) = (t <= toggleTime)*(line0_c0+line0_c1*t) + !(t <= toggleTime)*(line1_c0+line1_c1*t)
-		// toggleIdx must be signed for an easier release mode implementation
-		int toggleIdx;
+		// value(t) = (t <= toggleTime)*(line0_c0+line0_c1*t+line0_c2*t^2) + !(t <= toggleTime)*(line1_c0+line1_c1*t+line1_c2*t^2)
+		// any index > clampIdx should return the same value as clampIdx. This is for handling 3-part envelopes where the final portion is constant.
+		float clampIdx;
 		// segment coefficients
+		// the values these take are in the same units as 'P'
 		float line0_c0, line0_c1, line1_c0, line1_c1;
+		float line0_invLength;
+		float line1_invLength;
+		__device__ __host__ ADSR::Mode getMode() const {
+			return (ADSR::Mode)(unsigned)P;
+		}
 		__device__ __host__ ADSR::Mode nextMode(ADSR::Mode m) const {
 			return (ADSR::Mode)((unsigned)m + 1);
 		}
-		__device__ __host__ bool segmentFromIdx(unsigned idx) const {
-			return idx > toggleIdx;
+		__device__ __host__ float pFromIdx(unsigned idx) const {
+			return P + idx*line0_invLength;
+		}
+		__device__ __host__ bool segmentFromP(float pIdx) const {
+			return pIdx >= (unsigned)nextMode(getMode());
 		}
 	public:
 		// initialized at the start of a note
-		ADSRState() : mode(ADSR::AttackMode), toggleIdx(BUFFER_BLOCK_SIZE), line0_c0(0), line0_c1(0), line1_c0(0), line1_c1(0) {}
+		ADSRState() : P(0), clampIdx(BUFFER_BLOCK_SIZE), 
+			line0_c0(0), line0_c1(0), 
+			line1_c0(0), line1_c1(0),
+			line0_invLength(1e-7f), line1_invLength(1e-7f) {}
 		__device__ __host__ void atBlockStart(ADSR *start, ADSR *end, unsigned partialIdx, bool released) {
-			// get the last value from the previous buffer & increment the mode if needed.
-			line0_c0 = valueAtIdx(BUFFER_BLOCK_SIZE);
-			// increment the mode if we passed the toggleIdx last buffer
-			mode = (ADSR::Mode)((unsigned)mode + ((unsigned)mode < (unsigned)ADSR::EndMode && segmentFromIdx(BUFFER_BLOCK_SIZE) == 1));
-			// shift toggleIdx - necessary if in release mode, else has no effect.
-			toggleIdx -= BUFFER_BLOCK_SIZE;
-			if (released && (unsigned)mode < (unsigned)ADSR::ReleaseMode) {
-				// change to release mode if the note was released and is in either the attack, decay or sustain mode
-				// release must be handled explicitly because the slope depends on the current value obtained.
-				mode = ADSR::ReleaseMode;
-				float releaseTime = start->getSegmentLength(ADSR::ReleaseMode, partialIdx);
-				float endLevel = start->getSegmentStartLevel(ADSR::EndMode);
-				float deltaY = endLevel - line0_c0;
-				line0_c1 = deltaY / (releaseTime*SAMPLE_RATE);
-				line1_c0 = endLevel;
-				line1_c1 = 0;
-				toggleIdx = releaseTime*SAMPLE_RATE;
-			} else if (mode != ADSR::ReleaseMode) {
-				// TODO: segments are not linear; they are quadratic
-				float startSlope0 = start->getSegmentSlope(mode, partialIdx);
-				float startTrigLevel = start->getSegmentStartLevel(nextMode(mode));
-				line0_c1 = startSlope0*INV_SAMPLE_RATE;
-				float startSlope1 = start->getSegmentSlope(nextMode(mode), partialIdx);
-				line1_c0 = startTrigLevel;
-				line1_c1 = startSlope1*INV_SAMPLE_RATE;
-				// line0(toggleIdx) == line1(toggleIdx)
-				// line0_c0 + line0_c1*toggleIdx = line1_c0 + line1_c1*(toggleIdx-toggleIdx);
-				// line0_c1*toggleIdx = line1_c0 - line0_c0
-				toggleIdx = (line1_c0 - line0_c0) / line0_c1;
-			}
+			// preserve previous value
+			float prevValue = valueAtIdx(BUFFER_BLOCK_SIZE);
+			// track position in envelope
+			float idxOfSwitch = ((unsigned)nextMode(getMode()) - P) / line0_invLength;
+			idxOfSwitch = min(idxOfSwitch, (float)BUFFER_BLOCK_SIZE);
+			// add accumulated index change from each segment
+			P += idxOfSwitch*line0_invLength + (min(clampIdx, (float)BUFFER_BLOCK_SIZE) - idxOfSwitch)*line1_invLength;
+			// if we're released, skip to release mode (or further)
+			P = max(P, released*(float)(unsigned)ADSR::ReleaseMode);
+			// update slope of segment and rate at which we progress:
+			line0_invLength = 1.f / end->getSegmentLength(getMode(), partialIdx) * INV_SAMPLE_RATE;
+			float line1_length = end->getSegmentLength(nextMode(getMode()), partialIdx) * SAMPLE_RATE;
+			line1_invLength = 1.f / line1_length;
+			float line1_startValue = end->getSegmentStartLevel(nextMode(getMode()));
+			// update c0 and c1 based on the following constraints:
+			// value(P) == prevValue
+			// value(floor(P+1)) == endValue
+			// c0 + c1*P == prevValue
+			// c0 + c1*P2 == endValue
+			// c1*(P2-P) == endValue-prevValue -> c1 = (endValue-prevValue)/(P2-P)
+			// c0 = prevValue - c1*P;
+			unsigned endP = (unsigned)nextMode(getMode());
+			line0_c1 = (line1_startValue - prevValue) / (endP - P);
+			line0_c0 = prevValue - line0_c1*P;
+			// then calculate the coefficients for the second portion of the line
+			// line1(endP) == startVal
+			// line1(endP+length1*sample_rate*IL0) == endVal
+			float line1_endValue = end->getSegmentStartLevel(nextMode(nextMode(getMode())));
+			// c0 + c1*endP == startVal
+			// c0 + c1*endP + c1*length1*IL0 == endVal
+			// c1*length1*IL0 == endVal - startVal
+			line1_c1 = (line1_endValue - line1_startValue) / (line1_length*line0_invLength);
+			// line1_c0 + line1_c1*endP == startValue
+			line1_c0 = line1_startValue - line1_c1*endP;
+			// then determine the value for clampIdx
+			// endP+length1*IL0 == P+clampIdx*IL0
+			// (endP-P)/IL0 + length1 = clampIdx
+			float seg1StartIdx = (endP - P) / line0_invLength;
+			float seg1EndIdx = seg1StartIdx + line1_length;
+			clampIdx = seg1EndIdx;
 		}
 		__device__ __host__ bool isActiveAtEndOfBlock() const {
-			return ((unsigned)mode + segmentFromIdx(BUFFER_BLOCK_SIZE)) < (unsigned)ADSR::EndMode;
+			return pFromIdx(BUFFER_BLOCK_SIZE) < (unsigned)ADSR::EndMode;
 		}
 		__device__ __host__ float valueAtIdx(unsigned idx) const {
 			// return the first line evaluated at idx if idx < toggleIdx, else evaluate the second line at idx
-			bool seg = segmentFromIdx(idx);
-			return (!seg)*(line0_c0 + idx*line0_c1) + (seg)*(line1_c0 + (idx-toggleIdx)*line1_c1);
+			float idxAsFloat = min((float)idx, clampIdx);
+			float pIdx = pFromIdx(idxAsFloat);
+			bool seg = segmentFromP(pIdx);
+			return (!seg)*(line0_c0 + pIdx*line0_c1) + (seg)*(line1_c0 + pIdx*line1_c1);
 		}
 	};
 

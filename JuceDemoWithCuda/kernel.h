@@ -197,6 +197,19 @@ namespace kernel {
 		ADSRLFOEnvelope volumeEnvelope;
 		ADSRLFOEnvelope stereoPanEnvelope;
 		DetuneEnvelope detuneEnvelope;
+		ParameterStates() {
+			// initialize partials to uniform level
+			for (int p = 0; p < NUM_PARTIALS; ++p) {
+				partialLevels[p] = 0.5;
+			}
+			// default to no volume LFO
+			volumeEnvelope.getLfo()->getDepthAdsr()->setSustain(0.f);
+			// default to no panning or detuning
+			stereoPanEnvelope.getAdsr()->setSustain(0.f);
+			stereoPanEnvelope.getLfo()->getDepthAdsr()->setSustain(0.f);
+			detuneEnvelope.getAdsrLfo()->getAdsr()->setSustain(0.f);
+			detuneEnvelope.getAdsrLfo()->getLfo()->getDepthAdsr()->setSustain(0.f);
+		}
 	};
 
 	// Call to evaluate the next N samples of a synthesizer voice into bufferB.

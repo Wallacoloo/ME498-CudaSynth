@@ -10,9 +10,6 @@ PartialLevelsComponent::PartialLevelsComponent(PluginEditor *editor, float *part
 	  partialLevels(partialLevels)
 {
 	setSize(NUM_PARTIALS, 100);
-	for (int p = 0; p < NUM_PARTIALS; ++p) {
-		partialLevels[p] = 0.5;
-	}
 }
 
 
