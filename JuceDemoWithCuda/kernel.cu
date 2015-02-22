@@ -15,6 +15,9 @@
 #define CIRCULAR_BUFFER_LEN MAX_DELAY_EFFECT_LENGTH
 
 namespace kernel {
+	// define statics
+	unsigned ParameterStates::nextUUID(0);
+
 	class Sinusoidal {
 		// y(t) = mag(t)*sin(phase(t)), all t in frame offset from block start
 		// magnitude of sinusoid
@@ -421,11 +424,11 @@ namespace kernel {
 		int totalBytesToCopy = sizeof(ParameterStates);
 		int numTransfers = (totalBytesToCopy + transferSize - 1) / transferSize;
 		int numTransfersPerThread = (numTransfers + NUM_PARTIALS - 1) / NUM_PARTIALS;*/
-		if (partialIdx == NUM_PARTIALS-1) {
-			// TODO: only do this copy if the parameters have changed
-			memcpy(&voiceState->parameterInfo.start, &voiceState->parameterInfo.end, sizeof(ParameterStates));
+		if (voiceState->parameterInfo.start.UUID != voiceState->parameterInfo.end.UUID) {
+			if (partialIdx == NUM_PARTIALS - 1) {
+				memcpy(&voiceState->parameterInfo.start, &voiceState->parameterInfo.end, sizeof(ParameterStates));
+			}
 		}
-
 	}
 
 	// compute the output for ONE sine wave over the current block
@@ -557,6 +560,7 @@ namespace kernel {
 		doStartupOnce();
 		static bool hasInitStartParams = false;
 
+		newParameters->incrUUID();
 		for (int i = 0; i < MAX_SIMULTANEOUS_SYNTH_NOTES; ++i) {
 			// If this is the first time we've received parameter states, then that means parameterInfo.start is uninitialized.
 			if (!hasInitStartParams) {

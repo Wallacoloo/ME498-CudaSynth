@@ -195,12 +195,15 @@ namespace kernel {
 	//   another for at the end of the block.
 	//   The actual value at any time will be the linear interpolation of the two.
 	struct ParameterStates {
+		static unsigned nextUUID;
+		mutable unsigned UUID;
 		// hand-drawn partial envelopes
 		float partialLevels[NUM_PARTIALS];
 		ADSRLFOEnvelope volumeEnvelope;
 		ADSRLFOEnvelope stereoPanEnvelope;
 		DetuneEnvelope detuneEnvelope;
 		ParameterStates() {
+			UUID = nextUUID++;
 			// initialize partials to uniform level
 			for (int p = 0; p < NUM_PARTIALS; ++p) {
 				partialLevels[p] = 0.5;
@@ -212,6 +215,9 @@ namespace kernel {
 			stereoPanEnvelope.getLfo()->getDepthAdsr()->setSustain(0.f);
 			detuneEnvelope.getAdsrLfo()->getAdsr()->setSustain(0.f);
 			detuneEnvelope.getAdsrLfo()->getLfo()->getDepthAdsr()->setSustain(0.f);
+		}
+		void incrUUID() const {
+			UUID = nextUUID++;
 		}
 	};
 
