@@ -79,7 +79,7 @@ namespace kernel {
 		// The best way to handle this is to define the function like:
 		// value(t) = (t <= toggleTime)*(line0_c0+line0_c1*t+line0_c2*t^2) + !(t <= toggleTime)*(line1_c0+line1_c1*t+line1_c2*t^2)
 		// any index > clampIdx should return the same value as clampIdx. This is for handling 3-part envelopes where the final portion is constant.
-		float clampIdx;
+		float clampP;
 		// segment coefficients
 		// the values these take are in the same units as 'P'
 		float line0_c0, line0_c1, line1_c0, line1_c1;
@@ -103,18 +103,18 @@ namespace kernel {
 		}
 	public:
 		// initialized at the start of a note
-		ADSRState() : P(0), clampIdx(BUFFER_BLOCK_SIZE), 
+		ADSRState() : P(0), clampP(2.f), 
 			line0_c0(0), line0_c1(0), 
 			line1_c0(0), line1_c1(0),
 			line0_invLength(1e-7f), line1_invLength(1e-7f) {}
-		__device__ __host__ void atBlockStart(ADSR *start, ADSR *end, unsigned partialIdx, bool released) {
+		__device__ __host__ void atBlockStart(ADSR *start, ADSR *end, unsigned partialIdx, bool released, bool didParamsChange) {
 			// preserve previous value
 			float prevValue = valueAtIdx(BUFFER_BLOCK_SIZE);
 			// track position in envelope
 			float idxOfSwitch = ((unsigned)nextMode(getMode()) - P) / line0_invLength;
 			idxOfSwitch = min(idxOfSwitch, (float)BUFFER_BLOCK_SIZE);
 			// add accumulated index change from each segment
-			P += idxOfSwitch*line0_invLength + (min(clampIdx, (float)BUFFER_BLOCK_SIZE) - idxOfSwitch)*line1_invLength;
+			P = min(clampP, P + idxOfSwitch*line0_invLength + (BUFFER_BLOCK_SIZE - idxOfSwitch)*line1_invLength);
 			// if we're released, skip to release mode (or further)
 			P = max(P, released*(float)(unsigned)ADSR::ReleaseMode);
 			// update slope of segment and rate at which we progress:
@@ -148,20 +148,22 @@ namespace kernel {
 			line1_c1 = (line1_endValue - line1_startValue) / (line1_length*line0_invLength);
 			// line1_c0 + line1_c1*endP == startValue
 			line1_c0 = line1_startValue - line1_c1*endP;
-			// then determine the value for clampIdx
+			// then determine the value for clampP
 			// endP+length1*IL0 == P+clampIdx*IL0
 			// (endP-P)/IL0 + length1 = clampIdx
-			float seg1StartIdx = (endP - P) / line0_invLength;
-			float seg1EndIdx = seg1StartIdx + line1_length;
-			clampIdx = seg1EndIdx;
+			// endP+length1*IL0 == clampP
+			//float seg1StartIdx = (endP - P) / line0_invLength;
+			//float seg1EndIdx = seg1StartIdx + line1_length;
+			//clampIdx = seg1EndIdx;
+			clampP = endP + line1_length*line0_invLength;
 		}
 		__device__ __host__ bool isActiveAtEndOfBlock() const {
 			return pFromIdx(BUFFER_BLOCK_SIZE) < (unsigned)ADSR::EndMode;
 		}
 		__device__ __host__ float valueAtIdx(unsigned idx) const {
-			// return the first line evaluated at idx if idx < toggleIdx, else evaluate the second line at idx
-			float idxAsFloat = min((float)idx, clampIdx);
-			float pIdx = pFromIdx(idxAsFloat);
+			// return either the first or second line evaluated at idx, depending on where the switch occurs
+			float pIdx = pFromIdx(idx);
+			pIdx = min(pIdx, clampP);
 			bool seg = segmentFromP(pIdx);
 			return (!seg)*(line0_c0 + pIdx*line0_c1) + (seg)*(line1_c0 + pIdx*line1_c1);
 		}
@@ -172,14 +174,14 @@ namespace kernel {
 		ADSRState depthAdsrState;
 		Sinusoidal sinusoid;
 	public:
-		__device__ __host__ void atBlockStart(LFO *start, LFO *end, unsigned partialIdx, bool released) {
+		__device__ __host__ void atBlockStart(LFO *start, LFO *end, unsigned partialIdx, bool released, bool didParamsChange) {
 			ADSR *freqAdsrStart =  start->getFreqAdsr();
 			ADSR *depthAdsrStart = start->getDepthAdsr();
 			ADSR *freqAdsrEnd =    end->getFreqAdsr();
 			ADSR *depthAdsrEnd =   end->getDepthAdsr();
 			// update the ADSR states
-			freqAdsrState.atBlockStart(freqAdsrStart, freqAdsrEnd, partialIdx, released);
-			depthAdsrState.atBlockStart(depthAdsrStart, depthAdsrEnd, partialIdx, released);
+			freqAdsrState.atBlockStart(freqAdsrStart, freqAdsrEnd, partialIdx, released, didParamsChange);
+			depthAdsrState.atBlockStart(depthAdsrStart, depthAdsrEnd, partialIdx, released, didParamsChange);
 			// obtain the starting and ending frequency and depth.
 			// We will then just linearly interpolate over the block.
 			float startFreq = freqAdsrState.valueAtIdx(0);
@@ -197,9 +199,9 @@ namespace kernel {
 		ADSRState adsr;
 		LFOState lfo;
 	public:
-		__device__ __host__ void atBlockStart(ADSRLFOEnvelope *envStart, ADSRLFOEnvelope *envEnd, unsigned partialIdx, bool released) {
-			adsr.atBlockStart(envStart->getAdsr(), envEnd->getAdsr(), partialIdx, released);
-			lfo.atBlockStart(envStart->getLfo(), envEnd->getLfo(), partialIdx, released);
+		__device__ __host__ void atBlockStart(ADSRLFOEnvelope *envStart, ADSRLFOEnvelope *envEnd, unsigned partialIdx, bool released, bool didParamsChange) {
+			adsr.atBlockStart(envStart->getAdsr(), envEnd->getAdsr(), partialIdx, released, didParamsChange);
+			lfo.atBlockStart(envStart->getLfo(), envEnd->getLfo(), partialIdx, released, didParamsChange);
 		}
 		__device__ __host__ float productAtIdx(unsigned idx) const {
 			return adsr.valueAtIdx(idx) * (1 + lfo.valueAtIdx(idx));
@@ -215,8 +217,8 @@ namespace kernel {
 	class DetuneEnvelopeState {
 		ADSRLFOEnvelopeState adsrLfoState;
 	public:
-		__device__ __host__ void atBlockStart(DetuneEnvelope *envStart, DetuneEnvelope *envEnd, unsigned partialIdx, bool released) {
-			adsrLfoState.atBlockStart(envStart->getAdsrLfo(), envEnd->getAdsrLfo(), partialIdx, released);
+		__device__ __host__ void atBlockStart(DetuneEnvelope *envStart, DetuneEnvelope *envEnd, unsigned partialIdx, bool released, bool didParamsChange) {
+			adsrLfoState.atBlockStart(envStart->getAdsrLfo(), envEnd->getAdsrLfo(), partialIdx, released, didParamsChange);
 		}
 		__device__ __host__ float valueAtIdx(unsigned idx) const {
 			return adsrLfoState.sumAtIdx(idx);
@@ -242,7 +244,7 @@ namespace kernel {
 
 	struct SynthVoiceState {
 		FullBlockParameterInfo parameterInfo;
-		PartialState partialStates[NUM_PARTIALS];
+		PartialState partialStates[NUM_THREADS_PER_PARTIAL][NUM_PARTIALS];
 		float sampleBuffer[CIRCULAR_BUFFER_LEN*NUM_CH];
 	};
 
@@ -254,7 +256,8 @@ namespace kernel {
 	void PartialState::atBlockStart(struct SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq, bool released) {
 		ParameterStates *startParams = &voiceState->parameterInfo.start;
 		ParameterStates *endParams = &voiceState->parameterInfo.end;
-		detuneEnvelope.atBlockStart(&startParams->detuneEnvelope, &endParams->detuneEnvelope, partialIdx, released);
+		bool didParamsChange = (voiceState->parameterInfo.start.UUID != voiceState->parameterInfo.end.UUID);
+		detuneEnvelope.atBlockStart(&startParams->detuneEnvelope, &endParams->detuneEnvelope, partialIdx, released, didParamsChange);
 		
 		// calculate the start and end frequency for this block
 		float baseFreq = (partialIdx + 1)*fundamentalFreq;
@@ -263,8 +266,8 @@ namespace kernel {
 
 		// configure the sinusoid to transition from the starting frequency to the end frequency
 		sinusoid.newFrequencyAndDepth(baseFreq*(1.f+detuneStart), baseFreq*(1.f+detuneEnd), 1.f, 1.f);
-		volumeEnvelope.atBlockStart(&startParams->volumeEnvelope, &endParams->volumeEnvelope, partialIdx, released);
-		stereoPanEnvelope.atBlockStart(&startParams->stereoPanEnvelope, &endParams->stereoPanEnvelope, partialIdx, released);
+		volumeEnvelope.atBlockStart(&startParams->volumeEnvelope, &endParams->volumeEnvelope, partialIdx, released, didParamsChange);
+		stereoPanEnvelope.atBlockStart(&startParams->stereoPanEnvelope, &endParams->stereoPanEnvelope, partialIdx, released, didParamsChange);
 	}
 
 	// this is a circular buffer of sample data (interleaved by channel number) stored on the device
@@ -432,14 +435,14 @@ namespace kernel {
 	}
 
 	// compute the output for ONE sine wave over the current block
-	__device__ __host__ void computePartialOutput(SynthState *synthState, unsigned voiceNum, unsigned baseIdx, unsigned partialIdx, float fundamentalFreq, bool released) {
+	__device__ __host__ void computePartialOutput(SynthState *synthState, unsigned voiceNum, unsigned baseIdx, unsigned partialIdx, unsigned threadIdWithinPartial, float fundamentalFreq, bool released) {
 		SynthVoiceState *voiceState = &synthState->voiceStates[voiceNum];
-		PartialState* myState = &voiceState->partialStates[partialIdx];
+		PartialState* myState = &voiceState->partialStates[threadIdWithinPartial][partialIdx];
 		myState->atBlockStart(voiceState, partialIdx, fundamentalFreq, released);
 		// Get the base partial level (the hand-drawn frequency weights)
 		float level = (1.0 / NUM_PARTIALS) * voiceState->parameterInfo.start.partialLevels[partialIdx];
 		//printf("partialIdx: %i\n", partialIdx);
-		for (int sampleIdx = 0; sampleIdx < BUFFER_BLOCK_SIZE; ++sampleIdx) {
+		for (int sampleIdx = threadIdWithinPartial*NUM_SAMPLES_PER_THREAD; sampleIdx < (threadIdWithinPartial+1)*NUM_SAMPLES_PER_THREAD; ++sampleIdx) {
 			// Extract the sinusoidal portion of the wave.
 			// float sinusoid = myState->sinusoid.next().imag();
 			float sinusoid = myState->sinusoid.valueAtIdx(sampleIdx);
@@ -490,7 +493,7 @@ namespace kernel {
 
 	__global__ void evaluateSynthVoiceBlockKernel(SynthState *synthState, unsigned voiceNum, unsigned baseIdx, float fundamentalFreq, bool released) {
 		int partialNum = threadIdx.x;
-		computePartialOutput(synthState, voiceNum, baseIdx, partialNum, fundamentalFreq, released);
+		computePartialOutput(synthState, voiceNum, baseIdx, partialNum, 0, fundamentalFreq, released);
 	}
 
 	__host__ void evaluateSynthVoiceBlockOnCpu(float bufferB[BUFFER_BLOCK_SIZE*NUM_CH], unsigned voiceNum, unsigned sampleIdx, float fundamentalFreq, bool released) {
@@ -499,7 +502,9 @@ namespace kernel {
 		// move pointer to d_synthState into a local for easy debugging
 		SynthState *synthState = d_synthState;
 		for (int partialIdx = 0; partialIdx < NUM_PARTIALS; ++partialIdx) {
-			computePartialOutput(synthState, voiceNum, sampleIdx, partialIdx, fundamentalFreq, released);
+			for (int threadIdWithinPartial = 0; threadIdWithinPartial < NUM_THREADS_PER_PARTIAL; ++threadIdWithinPartial) {
+				computePartialOutput(synthState, voiceNum, sampleIdx, partialIdx, threadIdWithinPartial, fundamentalFreq, released);
+			}
 		}
 		unsigned bufferStartIdx = NUM_CH * (sampleIdx % CIRCULAR_BUFFER_LEN);
 		memcpy(bufferB, &synthState->voiceStates[voiceNum].sampleBuffer[bufferStartIdx], BUFFER_BLOCK_SIZE*NUM_CH*sizeof(float));
@@ -575,12 +580,16 @@ namespace kernel {
 		doStartupOnce();
 		// need to go through and properly initialize all the note's state information:
 		//   partial phases, ADSR states, etc.
-		PartialState partialStates[NUM_PARTIALS];
-		for (int i = 0; i < NUM_PARTIALS; ++i) {
-			partialStates[i] = PartialState(d_synthState, voiceNum, i);
+		//PartialState partialStates[NUM_THREADS_PER_PARTIAL][NUM_PARTIALS];
+		PartialState *partialStates = new PartialState[NUM_THREADS_PER_PARTIAL*NUM_PARTIALS];
+		for (int t = 0; t < NUM_THREADS_PER_PARTIAL; ++t) {
+			for (int i = 0; i < NUM_PARTIALS; ++i) {
+				partialStates[t*i] = PartialState(d_synthState, voiceNum, i);
+			}
 		}
-		memcpyHostToSynthState(&d_synthState->voiceStates[voiceNum].partialStates, partialStates, sizeof(PartialState)*NUM_PARTIALS);
+		memcpyHostToSynthState(&d_synthState->voiceStates[voiceNum].partialStates, partialStates, sizeof(PartialState)*NUM_THREADS_PER_PARTIAL*NUM_PARTIALS);
 		memsetSynthState(&d_synthState->voiceStates[voiceNum].sampleBuffer, 0, CIRCULAR_BUFFER_LEN*NUM_CH*sizeof(float));
+		delete partialStates;
 	}
 
 }

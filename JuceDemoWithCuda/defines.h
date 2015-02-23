@@ -12,11 +12,14 @@
 // The maximum number of notes that can be played simultaneously.
 #define MAX_SIMULTANEOUS_SYNTH_NOTES 4
 
-//number of samples to buffer at a time.
-//larger numbers means fewer transfefs between CPU / GPU,
-//  but larger latency
+// number of samples to buffer at a time.
+// larger numbers means fewer transfefs between CPU / GPU,
+//   but larger latency
 #define BUFFER_BLOCK_SIZE 512
 #define INV_BUFFER_BLOCK_SIZE (1.f / BUFFER_BLOCK_SIZE)
+// number of threads to use for evaluating *each* partial within the buffer block.
+#define NUM_THREADS_PER_PARTIAL 4
+#define NUM_SAMPLES_PER_THREAD (BUFFER_BLOCK_SIZE / NUM_THREADS_PER_PARTIAL)
 // The delay effect has to calculate its output N samples AHEAD of the current index.
 // If we want a maximum of 10sec delay (say 5 voices spaced 2 seconds apart), then we need 10*SAMPLE_RATE buffer size.
 // Note: this MUST be a multiple of BUFFER_BLOCK_SIZE
