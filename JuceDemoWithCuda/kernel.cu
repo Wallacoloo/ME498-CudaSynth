@@ -409,16 +409,29 @@ namespace kernel {
 			numActiveThreads /= 2;
 		}
 		if (partialIdx == 0) {
-			voiceState->sampleBuffer[bufferIdx + 0] = partialReductionOutputs[0];
-			voiceState->sampleBuffer[bufferIdx + 1] = partialReductionOutputs[1];
+			// zero the previous frame's outputs so delay effect can fill them
+			unsigned prevIdx = NUM_CH * ((CIRCULAR_BUFFER_LEN + sampleIdx - BUFFER_BLOCK_SIZE) % CIRCULAR_BUFFER_LEN);
+			
+			voiceState->sampleBuffer[prevIdx + 0] = 0;
+			voiceState->sampleBuffer[prevIdx + 1] = 0;
+			//atomicExch(&voiceState->sampleBuffer[prevIdx + 0], 0);
+			//atomicExch(&voiceState->sampleBuffer[prevIdx + 1], 0);
+			// add output to buffer (atomically)
+			atomicAdd(&voiceState->sampleBuffer[bufferIdx + 0], partialReductionOutputs[0]);
+			atomicAdd(&voiceState->sampleBuffer[bufferIdx + 1], partialReductionOutputs[1]);
+			//unsigned nextIdx = NUM_CH * ((sampleIdx + 40000) % (CIRCULAR_BUFFER_LEN));
+			//atomicAdd(&voiceState->sampleBuffer[nextIdx + 0], partialReductionOutputs[0]);
+			//atomicAdd(&voiceState->sampleBuffer[nextIdx + 1], partialReductionOutputs[1]);
 		}
 #else
 		//host code
 		//Since everything's computed iteratively, we can just add our outputs directly to the buffer.
 		//First write to this sample must zero-initialize the buffer (not required in the GPU code).
 		if (partialIdx == 0) {
-			voiceState->sampleBuffer[bufferIdx + 0] = 0;
-			voiceState->sampleBuffer[bufferIdx + 1] = 0;
+			// zero the previous frame's outputs so delay effect can fill them
+			unsigned prevIdx = NUM_CH * ((CIRCULAR_BUFFER_LEN + sampleIdx - BUFFER_BLOCK_SIZE) % CIRCULAR_BUFFER_LEN);
+			voiceState->sampleBuffer[prevIdx + 0] = 0;
+			voiceState->sampleBuffer[prevIdx + 1] = 0;
 		}
 		voiceState->sampleBuffer[bufferIdx + 0] += outputL;
 		voiceState->sampleBuffer[bufferIdx + 1] += outputR;

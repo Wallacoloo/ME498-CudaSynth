@@ -67,9 +67,9 @@ namespace kernel {
 		inline void setSegmentStartLevel(Mode mode, float value) {
 			// certain logic in the kernel may require that each segment have non-zero slope
 			if (mode != AttackMode && levelsAndLengths[(unsigned)mode - 1][0] == value) {
-				setSegmentStartLevel(mode, value + 0.00001);
+				setSegmentStartLevel(mode, value + 0.00001f);
 			} else if (mode != PastEndMode && levelsAndLengths[(unsigned)mode + 1][0] == value) {
-				setSegmentStartLevel(mode, value + 0.00001);
+				setSegmentStartLevel(mode, value + 0.00001f);
 			} else {
 				levelsAndLengths[(unsigned)mode][0] = value;
 			}
