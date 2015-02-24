@@ -123,19 +123,25 @@ namespace kernel {
 			float line1_length = end->getSegmentLength(nextMode(getMode()), partialIdx) * SAMPLE_RATE;
 			line1_invLength = 1.f / line1_length;
 			// calculate endpoint values for our lines
-			float line0_relPositionAtBufferBlockSize = pFromIdx(BUFFER_BLOCK_SIZE) - (float)(unsigned)getMode();
-			float line0_valueAtBufferBlockSize = interpolate(line0_relPositionAtBufferBlockSize, end->getSegmentStartLevel(getMode()), end->getSegmentStartLevel(nextMode(getMode())));
+			float line0_endPointX, line0_endPointY;
+			// float line0_relPositionAtBufferBlockSize = pFromIdx(BUFFER_BLOCK_SIZE) - (float)(unsigned)getMode();
+			// float line0_valueAtBufferBlockSize = interpolate(line0_relPositionAtBufferBlockSize, end->getSegmentStartLevel(getMode()), end->getSegmentStartLevel(nextMode(getMode())));
+			if ((unsigned)P == (unsigned)ADSR::SustainMode || (unsigned)P == (unsigned)ADSR::EndMode) {
+				line0_endPointX = pFromIdx(BUFFER_BLOCK_SIZE);
+				line0_endPointY = interpolate(line0_endPointX - (float)(unsigned)getMode(), end->getSegmentStartLevel(getMode()), end->getSegmentStartLevel(nextMode(getMode())));
+			} else {
+				line0_endPointX = (float)(unsigned)nextMode(getMode());
+				line0_endPointY = end->getSegmentStartLevel(nextMode(getMode()));
+			}
 			float line1_startValue = end->getSegmentStartLevel(nextMode(getMode()));
 			// update c0 and c1 based on the following constraints:
 			// value(P) == prevValue
-			// value(pFromIdx(BUFFER_BLOCK_SIZE)) == line0_valueAtBufferBlockSize
+			// value(endPointX) == endPointY
 			// c0 + c1*P == prevValue
 			// c0 + c1*P2 == endValue
 			// c1*(P2-P) == endValue-prevValue -> c1 = (endValue-prevValue)/(P2-P)
 			// c0 = prevValue - c1*P;
-			// line0_c1 = (line0_valueAtBufferBlockSize - prevValue) / (pFromIdx(BUFFER_BLOCK_SIZE) - P);
-			// line0_c1 = (line0_valueAtBufferBlockSize - prevValue) / (BUFFER_BLOCK_SIZE*line0_invLength);
-			line0_c1 = (line0_valueAtBufferBlockSize - prevValue) * line0_length * INV_BUFFER_BLOCK_SIZE;
+			line0_c1 = (line0_endPointY - prevValue) / (line0_endPointX-P);
 			line0_c0 = prevValue - line0_c1*P;
 			// then calculate the coefficients for the second portion of the line
 			// line1(endP) == startVal
