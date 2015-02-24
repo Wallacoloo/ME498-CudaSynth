@@ -493,7 +493,8 @@ namespace kernel {
 
 	__global__ void evaluateSynthVoiceBlockKernel(SynthState *synthState, unsigned voiceNum, unsigned baseIdx, float fundamentalFreq, bool released) {
 		int partialNum = threadIdx.x;
-		computePartialOutput(synthState, voiceNum, baseIdx, partialNum, 0, fundamentalFreq, released);
+		int threadIdWithinPartial = blockIdx.x;
+		computePartialOutput(synthState, voiceNum, baseIdx, partialNum, threadIdWithinPartial, fundamentalFreq, released);
 	}
 
 	__host__ void evaluateSynthVoiceBlockOnCpu(float bufferB[BUFFER_BLOCK_SIZE*NUM_CH], unsigned voiceNum, unsigned sampleIdx, float fundamentalFreq, bool released) {
@@ -511,7 +512,7 @@ namespace kernel {
 	}
 
 	__host__ void evaluateSynthVoiceBlockCuda(float bufferB[BUFFER_BLOCK_SIZE*NUM_CH], unsigned voiceNum, unsigned sampleIdx, float fundamentalFreq, bool released) {
-		evaluateSynthVoiceBlockKernel << <1, NUM_PARTIALS >> >(d_synthState, voiceNum, sampleIdx, fundamentalFreq, released);
+		evaluateSynthVoiceBlockKernel << <NUM_THREADS_PER_PARTIAL, NUM_PARTIALS >> >(d_synthState, voiceNum, sampleIdx, fundamentalFreq, released);
 
 		checkCudaError(cudaGetLastError()); //check if error in kernel launch
 		checkCudaError(cudaDeviceSynchronize()); //check for error INSIDE the kernel
@@ -580,7 +581,6 @@ namespace kernel {
 		doStartupOnce();
 		// need to go through and properly initialize all the note's state information:
 		//   partial phases, ADSR states, etc.
-		//PartialState partialStates[NUM_THREADS_PER_PARTIAL][NUM_PARTIALS];
 		PartialState *partialStates = new PartialState[NUM_THREADS_PER_PARTIAL*NUM_PARTIALS];
 		for (int t = 0; t < NUM_THREADS_PER_PARTIAL; ++t) {
 			for (int i = 0; i < NUM_PARTIALS; ++i) {
