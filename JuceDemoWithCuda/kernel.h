@@ -189,6 +189,18 @@ namespace kernel {
 		}
 	};
 
+	class DelayEnvelope {
+		ADSRLFOEnvelope spaceBetweenEchoes;
+		ADSRLFOEnvelope amplitudeLostPerEcho;
+	public:
+		inline HOST DEVICE ADSRLFOEnvelope* getSpaceBetweenEchoes() {
+			return &spaceBetweenEchoes;
+		}
+		inline HOST DEVICE ADSRLFOEnvelope* getAmplitudeLostPerEcho() {
+			return &amplitudeLostPerEcho;
+		}
+	};
+
 	// Struct to hold ALL parameter states at a single instant in time.
 	// There will be two of these sent during each synthesis block:
 	//   1 for at the start of the block,

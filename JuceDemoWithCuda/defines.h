@@ -26,6 +26,8 @@
 // For reference, 512*512 = 5.9 sec, 512*1024 = 11.9 sec
 #define MAX_DELAY_EFFECT_LENGTH (512*BUFFER_BLOCK_SIZE)
 
+#define MAX_DELAY_ECHOES 1
+
 // # of audio frames per second
 #define SAMPLE_RATE 44100
 #define INV_SAMPLE_RATE (1.f/44100.f)

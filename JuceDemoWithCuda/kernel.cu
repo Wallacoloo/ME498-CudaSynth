@@ -231,6 +231,22 @@ namespace kernel {
 		}
 	};
 
+	class DelayEnvelopeState {
+		ADSRLFOEnvelopeState spaceBetweenEchoes;
+		ADSRLFOEnvelopeState amplitudeLostPerEcho;
+	public:
+		__device__ __host__ void atBlockStart(DelayEnvelope *envStart, DelayEnvelope *envEnd, unsigned partialIdx, bool released, bool didParamsChange) {
+			spaceBetweenEchoes.atBlockStart(envStart->getSpaceBetweenEchoes(), envEnd->getSpaceBetweenEchoes(), partialIdx, released, didParamsChange);
+			amplitudeLostPerEcho.atBlockStart(envStart->getAmplitudeLostPerEcho(), envEnd->getAmplitudeLostPerEcho(), partialIdx, released, didParamsChange);
+		}
+		__device__ __host__ float spaceBetweenEchoesAtIdx(unsigned idx) const {
+			return spaceBetweenEchoes.productAtIdx(idx);
+		}
+		__device__ __host__ float amplitudeLostPerEchoAtIdx(unsigned idx) const {
+			return spaceBetweenEchoes.productAtIdx(idx);
+		}
+	};
+
 	// Contains info about the parameter states at ANY sample in the block
 	struct FullBlockParameterInfo {
 		ParameterStates start;
@@ -243,6 +259,7 @@ namespace kernel {
 		ADSRLFOEnvelopeState volumeEnvelope;
 		ADSRLFOEnvelopeState stereoPanEnvelope;
 		DetuneEnvelopeState detuneEnvelope;
+		DelayEnvelopeState delayState;
 		PartialState() {}
 		PartialState(struct SynthState *synthState, unsigned voiceNum, unsigned partialIdx) {}
 		__device__ __host__ void atBlockStart(struct SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq, bool released);
@@ -438,6 +455,54 @@ namespace kernel {
 #endif
 	}
 
+	// called for each partial to sum their outputs together.
+	__device__ __host__ void reduceDelayOutputs(SynthVoiceState *voiceState, unsigned partialIdx, int sampleIdx, float outputL, float outputR) {
+		//algorithm: given 8 outputs, [0, 1, 2, 3, 4, 5, 6, 7]
+		//first iteration: 4 active threads. 
+		//  Thread 0 adds i0 to i(0+4). Thread 1 adds i1 to i(1+4). Thread 2 adds i2 to i(2+4). Thread 3 adds i3 to i(3+4)
+		//  Output now: [4, 6, 8, 10,   4, 5, 6, 7]
+		//second iteration: 2 active threads.
+		//  Thread 0 adds i0 to i(0+2). Thread 1 adds i1 to i(1+2)
+		//  Output now: [12, 16,   8, 10, 4, 5, 6, 7]
+		//third iteration: 1 active thread.
+		//  Thread 0 adds i0 to i(0+1).
+		//  Output now: [28,   16, 8, 10, 4, 5, 6, 7]
+		//fourth iteration: 0 active threads -> exit
+		unsigned bufferIdx = NUM_CH * (sampleIdx % CIRCULAR_BUFFER_LEN);
+#ifdef __CUDA_ARCH__
+		//device code
+		// This reduction method requires a temporary array in shared memory.
+		/*__shared__ float partialReductionOutputs[NUM_PARTIALS*NUM_CH];
+
+		partialReductionOutputs[NUM_CH*partialIdx + 0] = outputL;
+		partialReductionOutputs[NUM_CH*partialIdx + 1] = outputR;
+		unsigned numActiveThreads = NUM_PARTIALS / 2;
+		while (numActiveThreads > 0) {
+			__syncthreads();
+			if (partialIdx < numActiveThreads) {
+				partialReductionOutputs[NUM_CH*partialIdx + 0] += partialReductionOutputs[NUM_CH*partialIdx + numActiveThreads*NUM_CH + 0];
+				partialReductionOutputs[NUM_CH*partialIdx + 1] += partialReductionOutputs[NUM_CH*partialIdx + numActiveThreads*NUM_CH + 1];
+			}
+			numActiveThreads /= 2;
+		}
+		if (partialIdx == 0) {
+			// add output to buffer (atomically)
+			atomicAdd(&voiceState->sampleBuffer[bufferIdx + 0], partialReductionOutputs[0]);
+			atomicAdd(&voiceState->sampleBuffer[bufferIdx + 1], partialReductionOutputs[1]);
+			//unsigned nextIdx = NUM_CH * ((sampleIdx + 40000) % (CIRCULAR_BUFFER_LEN));
+			//atomicAdd(&voiceState->sampleBuffer[nextIdx + 0], partialReductionOutputs[0]);
+			//atomicAdd(&voiceState->sampleBuffer[nextIdx + 1], partialReductionOutputs[1]);
+		}*/
+		atomicAdd(&voiceState->sampleBuffer[bufferIdx + 0], outputL);
+		atomicAdd(&voiceState->sampleBuffer[bufferIdx + 1], outputR);
+#else
+		//host code
+		//Since everything's computed iteratively, we can just add our outputs directly to the buffer.
+		voiceState->sampleBuffer[bufferIdx + 0] += outputL;
+		voiceState->sampleBuffer[bufferIdx + 1] += outputR;
+#endif
+	}
+
 	// called at the end of the block.
 	// if parameterInfo.start != parameterInfo.end, then we copy the end parameters of this block to the start parameters for the next block.
 	// this needs to be called for each sine wave.
@@ -463,16 +528,11 @@ namespace kernel {
 		//printf("partialIdx: %i\n", partialIdx);
 		for (int sampleIdx = threadIdWithinPartial*NUM_SAMPLES_PER_THREAD; sampleIdx < (threadIdWithinPartial+1)*NUM_SAMPLES_PER_THREAD; ++sampleIdx) {
 			// Extract the sinusoidal portion of the wave.
-			// float sinusoid = myState->sinusoid.next().imag();
 			float sinusoid = myState->sinusoid.valueAtIdx(sampleIdx);
 			// Get the ADSR/LFO volume envelope
-			//float envelope = myState->volumeEnvelope.nextAsProduct();
-			//float pan = myState->stereoPanEnvelope.nextAsSum();
 			float envelope = myState->volumeEnvelope.productAtIdx(sampleIdx);
 			float pan = myState->stereoPanEnvelope.sumAtIdx(sampleIdx);
 			float unpanned = level*envelope*sinusoid;
-			//float outputL = unpanned;
-			//float outputR = unpanned;
 			// full left = -1 pan. full right = +1 pan.
 			// Use circular panning, where L^2 + R^2 = 1.0
 			//   R(+1.0 pan) = 1.0, L(-1.0 pan) = 0.0, R(0.0 pan) = sqrt(1/2)
@@ -493,13 +553,21 @@ namespace kernel {
 			float angle = PI / 4 * (1 + pan);
 			float outputL = unpanned * cosf(angle);
 			float outputR = unpanned * sinf(angle);
-			//float outputL = unpanned * sqrt(0.5*(1-pan));
-			//float outputR = unpanned * sqrt(0.5*(1+pan));
-			//linear pan implementation:
-			//float outputL = unpanned * 0.5*(1 - pan);
-			//float outputR = unpanned * 0.5*(1 + pan);
-
+			// alternative linear pan implementation:
+			// float outputL = unpanned * 0.5*(1 - pan);
+			// float outputR = unpanned * 0.5*(1 + pan);
+			// write the output to the buffer, using a reduction algorithm to avoid serialization
 			reduceOutputs(voiceState, partialIdx, baseIdx + sampleIdx, outputL, outputR);
+			// compute delays
+			float delayPerEcho = myState->delayState.spaceBetweenEchoesAtIdx(sampleIdx);
+			float ampLossPerEcho = myState->delayState.amplitudeLostPerEchoAtIdx(sampleIdx);
+			float delayPerEchoInSamples = delayPerEcho*SAMPLE_RATE;
+			for (unsigned echoIdx = 1; echoIdx <= MAX_DELAY_ECHOES; ++echoIdx) {
+				unsigned curDelayIdx = echoIdx * delayPerEchoInSamples;
+				float curAmp = max(0.f, 1.f - echoIdx*ampLossPerEcho);
+				//if (curAmp <= 0.f) { break; }
+				reduceDelayOutputs(voiceState, partialIdx, baseIdx + sampleIdx + curDelayIdx, curAmp*outputL, curAmp*outputR);
+			}
 		}
 		updateVoiceParametersIfNeeded(voiceState, voiceNum, partialIdx);
 		// TODO: use a proper reduction algorithm to determine when the note is complete
