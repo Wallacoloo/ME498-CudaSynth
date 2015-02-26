@@ -4,6 +4,15 @@
 #include "defines.h"
 #include <algorithm> //for std::max
 
+// Minimum length for each portion of the ADSR envelope
+// Mins may be needed to avoid divisions by zero, etc.
+// #define MIN_ADSR_SEGMENT_LENGTH_SAMPLES BUFFER_BLOCK_SIZE
+#define MIN_ADSR_SEGMENT_LENGTH_SAMPLES 2
+// certain logic in the kernel may require that each segment have non-zero slope
+#define ADSR_MIN_SEGMENT_VALUE_DIFF 0.0000001f
+// sustain, end mode segments have finited length. Choose something long, but not so long that rounding errors arise
+#define ADSR_LONG_SEGMENT_LENGTH 4096.f
+
 namespace kernel {
 
 	class ADSR {
@@ -43,7 +52,7 @@ namespace kernel {
 		ADSR() {
 			// Sustain, EndMode must still have a finite length; set it to something absurdly long
 			// Don't make it too lengthy though, or rounding errors may occur in future parts of the kernel.
-			float longDuration = 2048.f;
+			float longDuration = ADSR_LONG_SEGMENT_LENGTH;
 			// set start level to 0 & attack to 0
 			setStartLevel(0.f);
 			setAttack(0.f);
@@ -67,9 +76,9 @@ namespace kernel {
 		inline void setSegmentStartLevel(Mode mode, float value) {
 			// certain logic in the kernel may require that each segment have non-zero slope
 			if (mode != AttackMode && levelsAndLengths[(unsigned)mode - 1][0] == value) {
-				setSegmentStartLevel(mode, value + 0.00001f);
+				setSegmentStartLevel(mode, value + ADSR_MIN_SEGMENT_VALUE_DIFF);
 			} else if (mode != PastEndMode && levelsAndLengths[(unsigned)mode + 1][0] == value) {
-				setSegmentStartLevel(mode, value + 0.00001f);
+				setSegmentStartLevel(mode, value + ADSR_MIN_SEGMENT_VALUE_DIFF);
 			} else {
 				levelsAndLengths[(unsigned)mode][0] = value;
 			}
@@ -77,7 +86,7 @@ namespace kernel {
 		inline void setSegmentLength(Mode mode, float value) {
 			// certain logic in the kernel may require that each segment have finite slope
 			//   or a minimum length
-			value = std::max(value, INV_SAMPLE_RATE*BUFFER_BLOCK_SIZE);
+			value = std::max(value, INV_SAMPLE_RATE*MIN_ADSR_SEGMENT_LENGTH_SAMPLES);
 			levelsAndLengths[(unsigned)mode][1] = value;
 		}
 		inline HOST DEVICE float getSegmentStartLevel(Mode mode) const {
@@ -214,6 +223,7 @@ namespace kernel {
 		ADSRLFOEnvelope volumeEnvelope;
 		ADSRLFOEnvelope stereoPanEnvelope;
 		DetuneEnvelope detuneEnvelope;
+		DelayEnvelope delayEnvelope;
 		ParameterStates() {
 			UUID = nextUUID++;
 			// initialize partials to uniform level
@@ -222,11 +232,14 @@ namespace kernel {
 			}
 			// default to no volume LFO
 			volumeEnvelope.getLfo()->getDepthAdsr()->setSustain(0.f);
-			// default to no panning or detuning
+			// default to no panning
 			stereoPanEnvelope.getAdsr()->setSustain(0.f);
 			stereoPanEnvelope.getLfo()->getDepthAdsr()->setSustain(0.f);
+			// default to no detuning
 			detuneEnvelope.getAdsrLfo()->getAdsr()->setSustain(0.f);
 			detuneEnvelope.getAdsrLfo()->getLfo()->getDepthAdsr()->setSustain(0.f);
+			// default to no delays (taken care of)
+			// delayEnvelope.getAmplitudeLostPerEcho()->getAdsr()->setSustain(1.f);
 		}
 		void incrUUID() const {
 			UUID = nextUUID++;

@@ -41,6 +41,8 @@ private:
 	ADSREditor volumeADSR, volumeLFOFreq, volumeLFODepth;
 	ADSREditor stereoADSR, stereoLFOFreq, stereoLFODepth;
 	ADSREditor detuneADSR, detuneLFOFreq, detuneLFODepth;
+	ADSREditor delaySpaceADSR;
+	ADSREditor delayAmpLossADSR;
     ScopedPointer<ResizableCornerComponent> resizer;
     ComponentBoundsConstrainer resizeLimits;
 

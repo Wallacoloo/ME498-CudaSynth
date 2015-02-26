@@ -14,8 +14,9 @@ PluginEditor::PluginEditor(PluginProcessor& owner)
 	  stereoLFODepth(this, parameterStates.stereoPanEnvelope.getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimitsPlusOrMinus),
 	  detuneADSR(this, parameterStates.detuneEnvelope.getAdsrLfo()->getAdsr(), "Detune", ADSREditor::ClassicKnobs, ADSREditor::NormalizedDepthLimits),
 	  detuneLFOFreq(this, parameterStates.detuneEnvelope.getAdsrLfo()->getLfo()->getFreqAdsr(), "LFO Freq", ADSREditor::AsrWithPeaksKnobs, ADSREditor::LFOFrequencyLimits),
-	  detuneLFODepth(this, parameterStates.detuneEnvelope.getAdsrLfo()->getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimitsPlusOrMinus)
-
+	  detuneLFODepth(this, parameterStates.detuneEnvelope.getAdsrLfo()->getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimitsPlusOrMinus),
+	  delaySpaceADSR(this, parameterStates.delayEnvelope.getSpaceBetweenEchoes()->getAdsr(), "Delay Time", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimits),
+	  delayAmpLossADSR(this, parameterStates.delayEnvelope.getAmplitudeLostPerEcho()->getAdsr(), "Amp Loss Per Echo", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimits)
 {
 	// add the parameter editors
 	addAndMakeVisible(partialLevelsComponent);
@@ -28,6 +29,8 @@ PluginEditor::PluginEditor(PluginProcessor& owner)
 	addAndMakeVisible(detuneADSR);
 	addAndMakeVisible(detuneLFOFreq);
 	addAndMakeVisible(detuneLFODepth);
+	addAndMakeVisible(delaySpaceADSR);
+	addAndMakeVisible(delayAmpLossADSR);
 
     // add the midi keyboard component
     addAndMakeVisible (midiKeyboard);
@@ -61,15 +64,18 @@ void PluginEditor::resized()
 
 	partialLevelsComponent.setBounds(partialLevelsComponent.getLocalBounds().translated(4, 0));
 
+	// position the ADSR editors
 	int padding = 6;
-	ADSREditor* volumeEditors[] = { &volumeADSR, &volumeLFOFreq, &volumeLFODepth };
-	ADSREditor* stereoEditors[] = { &stereoADSR, &stereoLFOFreq, &stereoLFODepth };
-	ADSREditor* detuneEditors[] = { &detuneADSR, &detuneLFOFreq, &detuneLFODepth };
-	Point<int> editorStartPoints[] = { Point<int>(144, 30), Point<int>(4, 120), Point<int>(4, 210) };
-	ADSREditor** editors[] = { volumeEditors, stereoEditors, detuneEditors };
-	for (int row = 0; row < 3; ++row) {
+	ADSREditor* volumeEditors[] = { &volumeADSR, &volumeLFOFreq, &volumeLFODepth, NULL };
+	ADSREditor* stereoEditors[] = { &stereoADSR, &stereoLFOFreq, &stereoLFODepth, NULL };
+	ADSREditor* detuneEditors[] = { &detuneADSR, &detuneLFOFreq, &detuneLFODepth, NULL };
+	ADSREditor* delayEditors[] = { &delaySpaceADSR, &delayAmpLossADSR, NULL };
+	Point<int> editorStartPoints[] = { Point<int>(144, 30), Point<int>(4, 120), Point<int>(4, 210), Point<int>(4, 300) };
+	ADSREditor** editors[] = { volumeEditors, stereoEditors, detuneEditors, delayEditors };
+	int numEditors = sizeof(editors) / sizeof(ADSREditor**);
+	for (int row = 0; row < numEditors; ++row) {
 		Point<int> curPos = editorStartPoints[row];
-		for (int i = 0; i < 3; ++i) {
+		for (int i = 0; editors[row][i] != NULL; ++i) {
 			ADSREditor *cur = editors[row][i];
 			Rectangle<int> curBounds = cur->getLocalBounds();
 			curBounds.setPosition(curPos);
@@ -77,9 +83,9 @@ void PluginEditor::resized()
 			curPos = cur->getBounds().getTopRight().translated(padding, 0);
 		}
 	}
-
+	// position the keyboard
 	midiKeyboard.setBounds(4, getHeight() - keyboardHeight - 4, getWidth() - 8, keyboardHeight);
-
+	// add a resizer element to bottom-right.
     resizer->setBounds (getWidth() - 16, getHeight() - 16, 16, 16);
 
     getProcessor().lastUIWidth = getWidth();

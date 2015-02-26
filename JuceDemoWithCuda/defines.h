@@ -7,7 +7,7 @@
 // This macro serves to avoid placing magic numbers in our code - it is assumed this will always be 2.
 #define NUM_CH 2
 // Number of partials to include in the sound.
-#define NUM_PARTIALS 128
+#define NUM_PARTIALS 4
 
 // The maximum number of notes that can be played simultaneously.
 #define MAX_SIMULTANEOUS_SYNTH_NOTES 4
@@ -18,7 +18,7 @@
 #define BUFFER_BLOCK_SIZE 512
 #define INV_BUFFER_BLOCK_SIZE (1.f / BUFFER_BLOCK_SIZE)
 // number of threads to use for evaluating *each* partial within the buffer block.
-#define NUM_THREADS_PER_PARTIAL 512
+#define NUM_THREADS_PER_PARTIAL 1
 #define NUM_SAMPLES_PER_THREAD (BUFFER_BLOCK_SIZE / NUM_THREADS_PER_PARTIAL)
 // The delay effect has to calculate its output N samples AHEAD of the current index.
 // If we want a maximum of 10sec delay (say 5 voices spaced 2 seconds apart), then we need 10*SAMPLE_RATE buffer size.
@@ -26,7 +26,7 @@
 // For reference, 512*512 = 5.9 sec, 512*1024 = 11.9 sec
 #define MAX_DELAY_EFFECT_LENGTH (512*BUFFER_BLOCK_SIZE)
 
-#define MAX_DELAY_ECHOES 1
+#define MAX_DELAY_ECHOES 8
 
 // # of audio frames per second
 #define SAMPLE_RATE 44100

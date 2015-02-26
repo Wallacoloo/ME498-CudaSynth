@@ -91,8 +91,12 @@ namespace kernel {
 		__device__ __host__ ADSR::Mode nextMode(ADSR::Mode m) const {
 			return (ADSR::Mode)((unsigned)m + 1);
 		}
-		__device__ __host__ float pFromIdx(float idx) const {
+		__device__ __host__ float unclampedPFromIdx(float idx) const {
 			return P + idx*line0_invLength;
+		}
+		__device__ __host__ float pFromIdx(float idx) const {
+			float pIdx = unclampedPFromIdx(idx);
+			return min(pIdx, clampP);
 		}
 		__device__ __host__ bool segmentFromP(float pIdx) const {
 			return pIdx >= (unsigned)nextMode(getMode());
@@ -127,7 +131,7 @@ namespace kernel {
 			// float line0_relPositionAtBufferBlockSize = pFromIdx(BUFFER_BLOCK_SIZE) - (float)(unsigned)getMode();
 			// float line0_valueAtBufferBlockSize = interpolate(line0_relPositionAtBufferBlockSize, end->getSegmentStartLevel(getMode()), end->getSegmentStartLevel(nextMode(getMode())));
 			if ((unsigned)P == (unsigned)ADSR::SustainMode || (unsigned)P == (unsigned)ADSR::EndMode) {
-				line0_endPointX = pFromIdx(BUFFER_BLOCK_SIZE);
+				line0_endPointX = unclampedPFromIdx(BUFFER_BLOCK_SIZE);
 				line0_endPointY = interpolate(line0_endPointX - (float)(unsigned)getMode(), end->getSegmentStartLevel(getMode()), end->getSegmentStartLevel(nextMode(getMode())));
 			} else {
 				line0_endPointX = (float)(unsigned)nextMode(getMode());
@@ -169,7 +173,6 @@ namespace kernel {
 		__device__ __host__ float valueAtIdx(unsigned idx) const {
 			// return either the first or second line evaluated at idx, depending on where the switch occurs
 			float pIdx = pFromIdx(idx);
-			pIdx = min(pIdx, clampP);
 			bool seg = segmentFromP(pIdx);
 			return (!seg)*(line0_c0 + pIdx*line0_c1) + (seg)*(line1_c0 + pIdx*line1_c1);
 		}
@@ -209,11 +212,17 @@ namespace kernel {
 			adsr.atBlockStart(envStart->getAdsr(), envEnd->getAdsr(), partialIdx, released, didParamsChange);
 			lfo.atBlockStart(envStart->getLfo(), envEnd->getLfo(), partialIdx, released, didParamsChange);
 		}
+		__device__ __host__ float adsrAtIdx(unsigned idx) const {
+			return adsr.valueAtIdx(idx);
+		}
+		__device__ __host__ float lfoAtIdx(unsigned idx) const {
+			return lfo.valueAtIdx(idx);
+		}
 		__device__ __host__ float productAtIdx(unsigned idx) const {
-			return adsr.valueAtIdx(idx) * (1 + lfo.valueAtIdx(idx));
+			return adsrAtIdx(idx) * (1 + lfoAtIdx(idx));
 		}
 		__device__ __host__ float sumAtIdx(unsigned idx) const {
-			return adsr.valueAtIdx(idx) + lfo.valueAtIdx(idx);
+			return adsrAtIdx(idx) + lfoAtIdx(idx);
 		}
 		__device__ __host__ bool isActiveAtEndOfBlock() const {
 			return adsr.isActiveAtEndOfBlock();
@@ -240,10 +249,10 @@ namespace kernel {
 			amplitudeLostPerEcho.atBlockStart(envStart->getAmplitudeLostPerEcho(), envEnd->getAmplitudeLostPerEcho(), partialIdx, released, didParamsChange);
 		}
 		__device__ __host__ float spaceBetweenEchoesAtIdx(unsigned idx) const {
-			return spaceBetweenEchoes.productAtIdx(idx);
+			return spaceBetweenEchoes.adsrAtIdx(idx);
 		}
 		__device__ __host__ float amplitudeLostPerEchoAtIdx(unsigned idx) const {
-			return spaceBetweenEchoes.productAtIdx(idx);
+			return amplitudeLostPerEcho.adsrAtIdx(idx);
 		}
 	};
 
@@ -280,8 +289,13 @@ namespace kernel {
 		ParameterStates *startParams = &voiceState->parameterInfo.start;
 		ParameterStates *endParams = &voiceState->parameterInfo.end;
 		bool didParamsChange = (voiceState->parameterInfo.start.UUID != voiceState->parameterInfo.end.UUID);
+
+		// init detune envelope
 		detuneEnvelope.atBlockStart(&startParams->detuneEnvelope, &endParams->detuneEnvelope, partialIdx, released, didParamsChange);
 		
+		// init delay state
+		delayState.atBlockStart(&startParams->delayEnvelope, &endParams->delayEnvelope, partialIdx, released, didParamsChange);
+
 		// calculate the start and end frequency for this block
 		float baseFreq = (partialIdx + 1)*fundamentalFreq;
 		float detuneStart = detuneEnvelope.valueAtIdx(0);
@@ -561,7 +575,7 @@ namespace kernel {
 			// compute delays
 			float delayPerEcho = myState->delayState.spaceBetweenEchoesAtIdx(sampleIdx);
 			float ampLossPerEcho = myState->delayState.amplitudeLostPerEchoAtIdx(sampleIdx);
-			float delayPerEchoInSamples = delayPerEcho*SAMPLE_RATE;
+			unsigned delayPerEchoInSamples = delayPerEcho*SAMPLE_RATE;
 			for (unsigned echoIdx = 1; echoIdx <= MAX_DELAY_ECHOES; ++echoIdx) {
 				unsigned curDelayIdx = echoIdx * delayPerEchoInSamples;
 				float curAmp = max(0.f, 1.f - echoIdx*ampLossPerEcho);
