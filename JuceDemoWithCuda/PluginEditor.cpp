@@ -70,7 +70,7 @@ void PluginEditor::resized()
 	ADSREditor* stereoEditors[] = { &stereoADSR, &stereoLFOFreq, &stereoLFODepth, NULL };
 	ADSREditor* detuneEditors[] = { &detuneADSR, &detuneLFOFreq, &detuneLFODepth, NULL };
 	ADSREditor* delayEditors[] = { &delaySpaceADSR, &delayAmpLossADSR, NULL };
-	Point<int> editorStartPoints[] = { Point<int>(144, 30), Point<int>(4, 120), Point<int>(4, 210), Point<int>(4, 300) };
+	Point<int> editorStartPoints[] = { Point<int>(partialLevelsComponent.getWidth()+16, 30), Point<int>(4, 120), Point<int>(4, 210), Point<int>(4, 300) };
 	ADSREditor** editors[] = { volumeEditors, stereoEditors, detuneEditors, delayEditors };
 	int numEditors = sizeof(editors) / sizeof(ADSREditor**);
 	for (int row = 0; row < numEditors; ++row) {
