@@ -1,6 +1,9 @@
 #include "ADSREditor.h"
 
 static const char* labelNames[] = { "Start", "A", "Peak", "D", "S", "R", "End", "Stretch" };
+static const char* tooltips[] = { "Start Level", "Attack Length", "Peak Level",
+"Delay Length", "Sustain Level", "Release Length",
+"End Level", "Elongate envelope based on sinusoidal's frequency" };
 
 // For the case where ADSR envelope starts at 0, moves up to 1, decays to sustain, and then releases to 0
 static const float classicAdsrParameterBounds[][2]            = { { 0, 1 },  { 0, 2 }, { 0, 1 },  { 0, 2 }, { 0, 1 },  { 0, 2 }, { 0, 1 }, { -0.8f, 5.0f } };
@@ -31,7 +34,7 @@ static const float (*parameterBoundsFromOptions(ADSREditor::KnobLimits opt))[2] 
 }
 
 ADSREditor::ADSREditor(PluginEditor *editor, ADSR *adsr, const char* editorLabel, KnobTypes knobTypes, KnobLimits knobLimits)
-	: ParameterEditor(editor, editorLabel, labelNames, parameterBoundsFromOptions(knobLimits), usableIndicesFromOptions(knobTypes)), 
+	: ParameterEditor(editor, editorLabel, labelNames, tooltips, parameterBoundsFromOptions(knobLimits), usableIndicesFromOptions(knobTypes)), 
 	adsr(adsr) {
 	// sync GUI with parameter values
 	refreshSliderValues();

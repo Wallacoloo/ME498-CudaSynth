@@ -1,7 +1,7 @@
 #include "ParameterEditor.h"
 #include "PluginEditor.h"
 
-ParameterEditor::ParameterEditor(PluginEditor *editor, const char* editorLabelText, const char** labelNames, const float parameterBounds[][2], const int* usableParameterIndices)
+ParameterEditor::ParameterEditor(PluginEditor *editor, const char* editorLabelText, const char** labelNames, const char** tooltips, const float parameterBounds[][2], const int* usableParameterIndices)
 	: editor(editor), parameterIndexMap(usableParameterIndices)
 {
 	// configure the label for this editor
@@ -20,15 +20,19 @@ ParameterEditor::ParameterEditor(PluginEditor *editor, const char* editorLabelTe
 		int i = usableParameterIndices[usableParamsIdx];
 		Slider *slider = &sliders[usableParamsIdx];
 		Label *label = &labels[usableParamsIdx];
+		// configure slider
 		slider->setSliderStyle(Slider::Rotary);
 		slider->setTextBoxStyle(Slider::NoTextBox, false, 0, 0);
 		addAndMakeVisible(slider);
 		slider->addListener(this);
 		slider->setRange(parameterBounds[i][0], parameterBounds[i][1], 0.f);
+		slider->setTooltip(tooltips[i]);
+		// configure label
 		addAndMakeVisible(label);
 		label->setFont(Font(11.f));
 		label->setJustificationType(Justification::centredTop);
 		label->setText(labelNames[i], sendNotification);
+		label->setTooltip(tooltips[i]);
 	}
 	// call resized() to compute the desired bounds
 	resized();

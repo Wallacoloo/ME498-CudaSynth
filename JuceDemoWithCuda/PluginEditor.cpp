@@ -3,7 +3,8 @@
 
 //==============================================================================
 PluginEditor::PluginEditor(PluginProcessor& owner)
-    : AudioProcessorEditor (owner),
+	: AudioProcessorEditor(owner),
+	  tooltipWindow(this, 1500),
       midiKeyboard (owner.keyboardState, MidiKeyboardComponent::horizontalKeyboard),
 	  partialLevelsComponent(this, parameterStates.partialLevels),
 	  volumeADSR(this, parameterStates.volumeEnvelope.getAdsr(), "Volume", ADSREditor::ClassicKnobs, ADSREditor::NormalizedDepthLimits),

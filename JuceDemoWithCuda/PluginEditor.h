@@ -35,6 +35,7 @@ public:
 	void parametersChanged();
 
 private:
+	TooltipWindow tooltipWindow;
 	ParameterStates parameterStates;
     MidiKeyboardComponent midiKeyboard;
 	PartialLevelsComponent partialLevelsComponent;
