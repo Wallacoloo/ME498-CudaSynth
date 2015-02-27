@@ -13,6 +13,7 @@ public:
 	// the ADSR envelope can be presented in a few different ways
 	enum KnobTypes {
 		ClassicKnobs,      // attack (startLevel=0.0), (peak=1.0), decay, sustain, release, (endLevel=0.0), stretchByFreq
+		ClassicKnobsWithScaleByIdx,
 		AsrWithPeaksKnobs, // attack, startLevel, (no decay or peak), sustain, release, endLevel, stretchByFreq
 	};
 	enum KnobLimits {

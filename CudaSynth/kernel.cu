@@ -132,12 +132,12 @@ namespace kernel {
 			// float line0_valueAtBufferBlockSize = interpolate(line0_relPositionAtBufferBlockSize, end->getSegmentStartLevel(getMode()), end->getSegmentStartLevel(nextMode(getMode())));
 			if ((unsigned)P == (unsigned)ADSR::SustainMode || (unsigned)P == (unsigned)ADSR::EndMode) {
 				line0_endPointX = unclampedPFromIdx(BUFFER_BLOCK_SIZE);
-				line0_endPointY = interpolate(line0_endPointX - (float)(unsigned)getMode(), end->getSegmentStartLevel(getMode()), end->getSegmentStartLevel(nextMode(getMode())));
+				line0_endPointY = interpolate(line0_endPointX - (float)(unsigned)getMode(), end->getSegmentStartLevel(getMode(), partialIdx), end->getSegmentStartLevel(nextMode(getMode()), partialIdx));
 			} else {
 				line0_endPointX = (float)(unsigned)nextMode(getMode());
-				line0_endPointY = end->getSegmentStartLevel(nextMode(getMode()));
+				line0_endPointY = end->getSegmentStartLevel(nextMode(getMode()), partialIdx);
 			}
-			float line1_startValue = end->getSegmentStartLevel(nextMode(getMode()));
+			float line1_startValue = end->getSegmentStartLevel(nextMode(getMode()), partialIdx);
 			// update c0 and c1 based on the following constraints:
 			// value(P) == prevValue
 			// value(endPointX) == endPointY
@@ -151,7 +151,7 @@ namespace kernel {
 			// line1(endP) == startVal
 			// line1(endP+length1*sample_rate*IL0) == endVal
 			unsigned endP = (unsigned)nextMode(getMode());
-			float line1_endValue = end->getSegmentStartLevel(nextMode(nextMode(getMode())));
+			float line1_endValue = end->getSegmentStartLevel(nextMode(nextMode(getMode())), partialIdx);
 			// c0 + c1*endP == startVal
 			// c0 + c1*endP + c1*length1*IL0 == endVal
 			// c1*length1*IL0 == endVal - startVal

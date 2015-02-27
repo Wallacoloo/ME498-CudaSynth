@@ -34,6 +34,7 @@ namespace kernel {
 		// sustain has infinite length, everything else has finite length.
 		float levelsAndLengths[6][2];
 		float scaleByPartialIdx;
+		float amplifyByPartialIdx;
 		/*// level at t=0
 		float startLevel;
 		// time it takes for the signal to rise to its peak
@@ -73,6 +74,7 @@ namespace kernel {
 			setSegmentLength(PastEndMode, longDuration);
 			// default to no scaling by partial index.
 			setScaleByPartialIdx(0);
+			setAmplificationByPartialIdx(0);
 		}
 		inline void setSegmentStartLevel(Mode mode, float value) {
 			// certain logic in the kernel may require that each segment have non-zero slope
@@ -93,8 +95,8 @@ namespace kernel {
 			value = std::max(value, INV_SAMPLE_RATE*MIN_ADSR_SEGMENT_LENGTH_SAMPLES);
 			levelsAndLengths[(unsigned)mode][1] = value;
 		}
-		inline HOST DEVICE float getSegmentStartLevel(Mode mode) const {
-			return levelsAndLengths[(unsigned)mode][0];
+		inline HOST DEVICE float getSegmentStartLevel(Mode mode, unsigned partialIdx=0) const {
+			return levelsAndLengths[(unsigned)mode][0] * getAmplificationFor(partialIdx);
 		}
 		inline HOST DEVICE float getSegmentLength(Mode mode, unsigned partialIdx=0) const {
 			return levelsAndLengths[(unsigned)mode][1] * getTimeScaleFor(partialIdx);
@@ -131,6 +133,9 @@ namespace kernel {
 		inline void setScaleByPartialIdx(float s) {
 			this->scaleByPartialIdx = s;
 		}
+		inline void setAmplificationByPartialIdx(float a) {
+			this->amplifyByPartialIdx = a;
+		}
 		inline HOST DEVICE float getStartLevel() const {
 			return getSegmentStartLevel(AttackMode);
 		}
@@ -155,8 +160,14 @@ namespace kernel {
 		inline HOST DEVICE float getScaleByPartialIdx() const {
 			return scaleByPartialIdx;
 		}
+		inline HOST DEVICE float getAmplificationByPartialIdx() const {
+			return amplifyByPartialIdx;
+		}
 		inline HOST DEVICE float getTimeScaleFor(unsigned partialIdx) const {
 			return 1.f + scaleByPartialIdx*partialIdx/NUM_PARTIALS;
+		}
+		inline HOST DEVICE float  getAmplificationFor(unsigned partialIdx) const {
+			return 1.f + amplifyByPartialIdx*partialIdx / NUM_PARTIALS;
 		}
 	};
 

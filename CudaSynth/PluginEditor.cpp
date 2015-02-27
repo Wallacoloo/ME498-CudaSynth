@@ -10,14 +10,14 @@ PluginEditor::PluginEditor(PluginProcessor& owner)
 	  volumeADSR(this, parameterStates.volumeEnvelope.getAdsr(), "Volume", ADSREditor::ClassicKnobs, ADSREditor::NormalizedDepthLimits),
 	  volumeLFOFreq(this, parameterStates.volumeEnvelope.getLfo()->getFreqAdsr(), "LFO Freq", ADSREditor::AsrWithPeaksKnobs, ADSREditor::LFOFrequencyLimits),
 	  volumeLFODepth(this, parameterStates.volumeEnvelope.getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimitsPlusOrMinus),
-	  stereoADSR(this, parameterStates.stereoPanEnvelope.getAdsr(), "Stereo Pan", ADSREditor::ClassicKnobs, ADSREditor::NormalizedDepthLimitsPlusOrMinus),
+	  stereoADSR(this, parameterStates.stereoPanEnvelope.getAdsr(), "Stereo Pan", ADSREditor::ClassicKnobsWithScaleByIdx, ADSREditor::NormalizedDepthLimitsPlusOrMinus),
 	  stereoLFOFreq(this, parameterStates.stereoPanEnvelope.getLfo()->getFreqAdsr(), "LFO Freq", ADSREditor::AsrWithPeaksKnobs, ADSREditor::LFOFrequencyLimits),
 	  stereoLFODepth(this, parameterStates.stereoPanEnvelope.getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimitsPlusOrMinus),
-	  detuneADSR(this, parameterStates.detuneEnvelope.getAdsrLfo()->getAdsr(), "Detune", ADSREditor::ClassicKnobs, ADSREditor::NormalizedDepthLimits),
+	  detuneADSR(this, parameterStates.detuneEnvelope.getAdsrLfo()->getAdsr(), "Detune", ADSREditor::ClassicKnobsWithScaleByIdx, ADSREditor::NormalizedDepthLimits),
 	  detuneLFOFreq(this, parameterStates.detuneEnvelope.getAdsrLfo()->getLfo()->getFreqAdsr(), "LFO Freq", ADSREditor::AsrWithPeaksKnobs, ADSREditor::LFOFrequencyLimits),
 	  detuneLFODepth(this, parameterStates.detuneEnvelope.getAdsrLfo()->getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimitsPlusOrMinus),
-	  delaySpaceADSR(this, parameterStates.delayEnvelope.getSpaceBetweenEchoes()->getAdsr(), "Delay Time", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimits),
-	  delayAmpLossADSR(this, parameterStates.delayEnvelope.getAmplitudeLostPerEcho()->getAdsr(), "Amp Loss Per Echo", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimits)
+	  delaySpaceADSR(this, parameterStates.delayEnvelope.getSpaceBetweenEchoes()->getAdsr(), "Delay Time", ADSREditor::ClassicKnobsWithScaleByIdx, ADSREditor::NormalizedDepthLimits),
+	  delayAmpLossADSR(this, parameterStates.delayEnvelope.getAmplitudeLostPerEcho()->getAdsr(), "Amp Loss Per Echo", ADSREditor::ClassicKnobsWithScaleByIdx, ADSREditor::NormalizedDepthLimits)
 {
 	// add the parameter editors
 	addAndMakeVisible(partialLevelsComponent);
