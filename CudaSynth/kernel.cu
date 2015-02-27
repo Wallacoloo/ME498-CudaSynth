@@ -172,7 +172,7 @@ namespace kernel {
 		}
 		__device__ __host__ float valueAtIdx(unsigned idx) const {
 			// return either the first or second line evaluated at idx, depending on where the switch occurs
-			float pIdx = pFromIdx(idx);
+			float pIdx = pFromIdx((float)idx);
 			bool seg = segmentFromP(pIdx);
 			return (!seg)*(line0_c0 + pIdx*line0_c1) + (seg)*(line1_c0 + pIdx*line1_c1);
 		}
@@ -249,10 +249,12 @@ namespace kernel {
 			amplitudeLostPerEcho.atBlockStart(envStart->getAmplitudeLostPerEcho(), envEnd->getAmplitudeLostPerEcho(), partialIdx, released, didParamsChange);
 		}
 		__device__ __host__ float spaceBetweenEchoesAtIdx(unsigned idx) const {
-			return spaceBetweenEchoes.adsrAtIdx(idx);
+			//return spaceBetweenEchoes.adsrAtIdx(idx);
+			return spaceBetweenEchoes.productAtIdx(idx);
 		}
 		__device__ __host__ float amplitudeLostPerEchoAtIdx(unsigned idx) const {
-			return amplitudeLostPerEcho.adsrAtIdx(idx);
+			//return amplitudeLostPerEcho.adsrAtIdx(idx);
+			return amplitudeLostPerEcho.productAtIdx(idx);
 		}
 	};
 
@@ -538,9 +540,9 @@ namespace kernel {
 		PartialState* myState = &voiceState->partialStates[threadIdWithinPartial][partialIdx];
 		myState->atBlockStart(voiceState, partialIdx, fundamentalFreq, released);
 		// Get the base partial level (the hand-drawn frequency weights)
-		float level = (1.0 / NUM_PARTIALS) * voiceState->parameterInfo.start.partialLevels[partialIdx];
+		float level = (1.f / NUM_PARTIALS) * voiceState->parameterInfo.start.partialLevels[partialIdx];
 		//printf("partialIdx: %i\n", partialIdx);
-		for (int sampleIdx = threadIdWithinPartial*NUM_SAMPLES_PER_THREAD; sampleIdx < (threadIdWithinPartial+1)*NUM_SAMPLES_PER_THREAD; ++sampleIdx) {
+		for (unsigned sampleIdx = threadIdWithinPartial*NUM_SAMPLES_PER_THREAD; sampleIdx < (threadIdWithinPartial+1)*NUM_SAMPLES_PER_THREAD; ++sampleIdx) {
 			// Extract the sinusoidal portion of the wave.
 			float sinusoid = myState->sinusoid.valueAtIdx(sampleIdx);
 			// Get the ADSR/LFO volume envelope
@@ -564,7 +566,7 @@ namespace kernel {
 			// sin(pi/2) = R(1.0) = 1.0
 			// So, L(pan) = cos(pi/4 + pi/4*pan) = cos(pi/4*(1+pan))
 			//     R(pan) = sin(pi/4 + pi/4*pan) = sin(pi/4*(1+pan))
-			float angle = PI / 4 * (1 + pan);
+			float angle = PIf / 4 * (1 + pan);
 			float outputL = unpanned * cosf(angle);
 			float outputR = unpanned * sinf(angle);
 			// alternative linear pan implementation:

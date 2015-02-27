@@ -1,6 +1,6 @@
 // set to 1 to disable CUDA even on cuda-enabled machines
 #ifndef NEVER_USE_CUDA
-#define NEVER_USE_CUDA 0
+#define NEVER_USE_CUDA 1
 #endif
 
 // number of audio channels to use (2=stereo)
@@ -33,6 +33,7 @@
 #define INV_SAMPLE_RATE (1.f/44100.f)
 
 #define PI 3.14159265358979323846
+#define PIf 3.14159265358979323846f
 
 
 

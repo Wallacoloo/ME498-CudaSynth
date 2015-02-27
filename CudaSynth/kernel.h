@@ -9,7 +9,8 @@
 // #define MIN_ADSR_SEGMENT_LENGTH_SAMPLES BUFFER_BLOCK_SIZE
 #define MIN_ADSR_SEGMENT_LENGTH_SAMPLES 2
 // certain logic in the kernel may require that each segment have non-zero slope
-#define ADSR_MIN_SEGMENT_VALUE_DIFF 0.0000001f
+// #define ADSR_MIN_SEGMENT_VALUE_DIFF 0.0000001f
+#define ADSR_MIN_SEGMENT_VALUE_DIFF 0
 // sustain, end mode segments have finited length. Choose something long, but not so long that rounding errors arise
 #define ADSR_LONG_SEGMENT_LENGTH 4096.f
 
@@ -75,13 +76,16 @@ namespace kernel {
 		}
 		inline void setSegmentStartLevel(Mode mode, float value) {
 			// certain logic in the kernel may require that each segment have non-zero slope
-			if (mode != AttackMode && levelsAndLengths[(unsigned)mode - 1][0] == value) {
-				setSegmentStartLevel(mode, value + ADSR_MIN_SEGMENT_VALUE_DIFF);
-			} else if (mode != PastEndMode && levelsAndLengths[(unsigned)mode + 1][0] == value) {
-				setSegmentStartLevel(mode, value + ADSR_MIN_SEGMENT_VALUE_DIFF);
-			} else {
-				levelsAndLengths[(unsigned)mode][0] = value;
+			if (ADSR_MIN_SEGMENT_VALUE_DIFF != 0) {
+				if (mode != AttackMode && levelsAndLengths[(unsigned)mode - 1][0] == value) {
+					setSegmentStartLevel(mode, value + ADSR_MIN_SEGMENT_VALUE_DIFF);
+					return;
+				} else if (mode != PastEndMode && levelsAndLengths[(unsigned)mode + 1][0] == value) {
+					setSegmentStartLevel(mode, value + ADSR_MIN_SEGMENT_VALUE_DIFF);
+					return;
+				}
 			}
+			levelsAndLengths[(unsigned)mode][0] = value;
 		}
 		inline void setSegmentLength(Mode mode, float value) {
 			// certain logic in the kernel may require that each segment have finite slope
@@ -240,6 +244,9 @@ namespace kernel {
 			detuneEnvelope.getAdsrLfo()->getLfo()->getDepthAdsr()->setSustain(0.f);
 			// default to no delays (taken care of)
 			// delayEnvelope.getAmplitudeLostPerEcho()->getAdsr()->setSustain(1.f);
+			// default to no delay LFO
+			delayEnvelope.getAmplitudeLostPerEcho()->getLfo()->getDepthAdsr()->setSustain(0.f);
+			delayEnvelope.getSpaceBetweenEchoes()->getLfo()->getDepthAdsr()->setSustain(0.f);
 		}
 		void incrUUID() const {
 			UUID = nextUUID++;
