@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 2013
 VisualStudioVersion = 12.0.31101.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "JuceDemoWithCuda", "JuceDemoWithCuda\JuceDemoWithCuda.vcxproj", "{AD0595DD-8B69-4F25-9E3A-873E96E9D4F6}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CudaSynth", "CudaSynth\CudaSynth.vcxproj", "{AD0595DD-8B69-4F25-9E3A-873E96E9D4F6}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

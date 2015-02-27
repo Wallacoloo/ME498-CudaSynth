@@ -28,7 +28,8 @@
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{AD0595DD-8B69-4F25-9E3A-873E96E9D4F6}</ProjectGuid>
-    <RootNamespace>JuceDemoWithCuda</RootNamespace>
+    <RootNamespace>CudaSynth</RootNamespace>
+    <ProjectName>CudaSynth</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Standalone-Debug-Cuda|Win32'" Label="Configuration">
