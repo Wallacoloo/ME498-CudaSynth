@@ -4,11 +4,12 @@
 #include "device_launch_parameters.h"
 #include <stdio.h>
 #include <math.h>
-#include <string.h> //for memset
+#include <string.h> // for memset
 #include <assert.h>
-#include <stdlib.h> //for atexit
+#include <stdlib.h> // for atexit
 #include <mutex>
-#include <thread> //for unique_lock
+#include <thread> // for unique_lock
+#include <random> // for deterministic pseudorandom number generation
 
 #include "defines.h"
 
@@ -17,6 +18,16 @@
 namespace kernel {
 	// define statics
 	unsigned ParameterStates::nextUUID(0);
+
+	// forward-declare necessary classes
+	class SynthVoiceState;
+	class SynthState;
+	// this is a circular buffer of sample data (interleaved by channel number) stored on the device
+	// It is persistent and lengthy, in order to accomodate the delay effect.
+	SynthState *d_synthState = NULL;
+
+	// When running on the cpu, we need to control concurrent access to the synth state
+	std::mutex synthStateMutex;
 
 	class Sinusoidal {
 		// y(t) = mag(t)*sin(phase(t)), all t in frame offset from block start
@@ -55,6 +66,42 @@ namespace kernel {
 		}
 		__device__ __host__ float valueAtIdx(unsigned idx) const {
 			return magAtIdx(idx)*sinf(phaseAtIdx(idx));
+		}
+	};
+
+	class RandomNumberGen {
+		float randomValues[DETUNE_NUM_SEEDS][NUM_PARTIALS];
+	public:
+		RandomNumberGen() {
+			// want randomValues[i][j] to stay the same regardless of NUM_PARTIALS,
+			// so process each row with an independent seed.
+			// create the seeds with ANOTHER random number generator
+			std::minstd_rand seedGen(119606366); // seed chosen from random.org.
+			std::minstd_rand rng;
+			for (int row = 0; row < DETUNE_NUM_SEEDS; ++row) {
+				rng.seed(seedGen());
+				for (int partial = 0; partial < NUM_PARTIALS; ++partial) {
+					// generate a normalized random number (0 - 1)
+					float normRand = (float)rng() / 2147483647;
+					// turn this into a symmetric distribution from (-1, 1) centered at 0.
+					float doubleSided = -1 + 2 * normRand;
+					randomValues[row][partial] = doubleSided;
+				}
+			}
+		}
+		// return a random number from interpolated the N seeds evaluated at partialIdx.
+		// seedNo should be between [0, 1]
+		__host__ __device__ float getFor(float seedNo, unsigned partialIdx) {
+			// Interpolate the seeds using the following algorithm:
+			// v(seed, partial) = (1 - seed^2)*seed0[partial] + (1 - (seed-1/N))*seed1[partial] + (1 - (seed-2/N))*seed2[partial] + ...
+			// where N is the number of seeds MINUS 1.
+			float value = 0.f;
+			for (int curSeed = 0; curSeed < DETUNE_NUM_SEEDS; ++curSeed) {
+				float distance = seedNo - curSeed / (float)(DETUNE_NUM_SEEDS - 1);
+				float weight = 1 - distance*distance;
+				value += weight * randomValues[curSeed][partialIdx];
+			}
+			return value;
 		}
 	};
 
@@ -231,12 +278,11 @@ namespace kernel {
 
 	class DetuneEnvelopeState {
 		ADSRLFOEnvelopeState adsrLfoState;
+		float weight;
 	public:
-		__device__ __host__ void atBlockStart(DetuneEnvelope *envStart, DetuneEnvelope *envEnd, unsigned partialIdx, bool released, bool didParamsChange) {
-			adsrLfoState.atBlockStart(envStart->getAdsrLfo(), envEnd->getAdsrLfo(), partialIdx, released, didParamsChange);
-		}
+		__device__ __host__ void atBlockStart(SynthState *synthState, DetuneEnvelope *envStart, DetuneEnvelope *envEnd, unsigned partialIdx, bool released, bool didParamsChange);
 		__device__ __host__ float valueAtIdx(unsigned idx) const {
-			return adsrLfoState.sumAtIdx(idx);
+			return weight*adsrLfoState.sumAtIdx(idx);
 		}
 	};
 
@@ -273,7 +319,7 @@ namespace kernel {
 		DelayEnvelopeState delayState;
 		PartialState() {}
 		PartialState(struct SynthState *synthState, unsigned voiceNum, unsigned partialIdx) {}
-		__device__ __host__ void atBlockStart(struct SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq, bool released);
+		__device__ __host__ void atBlockStart(SynthState *synthState, SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq, bool released);
 	};
 
 	struct SynthVoiceState {
@@ -284,16 +330,24 @@ namespace kernel {
 
 	// Packages all the state-related information for the synth in one class to store persistently on the device
 	struct SynthState {
+		RandomNumberGen randomNumbers;
 		SynthVoiceState voiceStates[MAX_SIMULTANEOUS_SYNTH_NOTES];
 	};
 
-	void PartialState::atBlockStart(struct SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq, bool released) {
+	__host__ __device__ void DetuneEnvelopeState::atBlockStart(SynthState *synthState, DetuneEnvelope *envStart, DetuneEnvelope *envEnd, unsigned partialIdx, bool released, bool didParamsChange) {
+		float randDepth = envStart->getRandMix();
+		float randOffset = synthState->randomNumbers.getFor(envStart->getRandSeed(), partialIdx);
+		weight = 1 + (randOffset - 1)*randDepth;
+		adsrLfoState.atBlockStart(envStart->getAdsrLfo(), envEnd->getAdsrLfo(), partialIdx, released, didParamsChange);
+	}
+
+	void PartialState::atBlockStart(SynthState *synthState, SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq, bool released) {
 		ParameterStates *startParams = &voiceState->parameterInfo.start;
 		ParameterStates *endParams = &voiceState->parameterInfo.end;
 		bool didParamsChange = (voiceState->parameterInfo.start.UUID != voiceState->parameterInfo.end.UUID);
 
 		// init detune envelope
-		detuneEnvelope.atBlockStart(&startParams->detuneEnvelope, &endParams->detuneEnvelope, partialIdx, released, didParamsChange);
+		detuneEnvelope.atBlockStart(synthState, &startParams->detuneEnvelope, &endParams->detuneEnvelope, partialIdx, released, didParamsChange);
 		
 		// init delay state
 		delayState.atBlockStart(&startParams->delayEnvelope, &endParams->delayEnvelope, partialIdx, released, didParamsChange);
@@ -308,13 +362,6 @@ namespace kernel {
 		volumeEnvelope.atBlockStart(&startParams->volumeEnvelope, &endParams->volumeEnvelope, partialIdx, released, didParamsChange);
 		stereoPanEnvelope.atBlockStart(&startParams->stereoPanEnvelope, &endParams->stereoPanEnvelope, partialIdx, released, didParamsChange);
 	}
-
-	// this is a circular buffer of sample data (interleaved by channel number) stored on the device
-	// It is persistent and lengthy, in order to accomodate the delay effect.
-	SynthState *d_synthState = NULL;
-
-	// When running on the cpu, we need to control concurrent access to the synth state
-	std::mutex synthStateMutex;
 
 	static void printCudaDeviveProperties(cudaDeviceProp devProp) {
 		// utility function to log device info. Source: https://www.cac.cornell.edu/vw/gpu/example_submit.aspx
@@ -538,7 +585,7 @@ namespace kernel {
 	__device__ __host__ void computePartialOutput(SynthState *synthState, unsigned voiceNum, unsigned baseIdx, unsigned partialIdx, unsigned threadIdWithinPartial, float fundamentalFreq, bool released) {
 		SynthVoiceState *voiceState = &synthState->voiceStates[voiceNum];
 		PartialState* myState = &voiceState->partialStates[threadIdWithinPartial][partialIdx];
-		myState->atBlockStart(voiceState, partialIdx, fundamentalFreq, released);
+		myState->atBlockStart(synthState, voiceState, partialIdx, fundamentalFreq, released);
 		// Get the base partial level (the hand-drawn frequency weights)
 		float level = (1.f / NUM_PARTIALS) * voiceState->parameterInfo.start.partialLevels[partialIdx];
 		//printf("partialIdx: %i\n", partialIdx);

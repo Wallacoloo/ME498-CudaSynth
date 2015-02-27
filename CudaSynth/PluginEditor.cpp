@@ -13,9 +13,11 @@ PluginEditor::PluginEditor(PluginProcessor& owner)
 	  stereoADSR(this, parameterStates.stereoPanEnvelope.getAdsr(), "Stereo Pan", ADSREditor::ClassicKnobsWithScaleByIdx, ADSREditor::NormalizedDepthLimitsPlusOrMinus),
 	  stereoLFOFreq(this, parameterStates.stereoPanEnvelope.getLfo()->getFreqAdsr(), "LFO Freq", ADSREditor::AsrWithPeaksKnobs, ADSREditor::LFOFrequencyLimits),
 	  stereoLFODepth(this, parameterStates.stereoPanEnvelope.getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimitsPlusOrMinus),
+	  detuneRandEditor(this, &parameterStates.detuneEnvelope, "Rand Detune"),
 	  detuneADSR(this, parameterStates.detuneEnvelope.getAdsrLfo()->getAdsr(), "Detune", ADSREditor::ClassicKnobsWithScaleByIdx, ADSREditor::NormalizedDepthLimits),
 	  detuneLFOFreq(this, parameterStates.detuneEnvelope.getAdsrLfo()->getLfo()->getFreqAdsr(), "LFO Freq", ADSREditor::AsrWithPeaksKnobs, ADSREditor::LFOFrequencyLimits),
 	  detuneLFODepth(this, parameterStates.detuneEnvelope.getAdsrLfo()->getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimitsPlusOrMinus),
+	  
 	  delaySpaceADSR(this, parameterStates.delayEnvelope.getSpaceBetweenEchoes()->getAdsr(), "Delay Time", ADSREditor::ClassicKnobsWithScaleByIdx, ADSREditor::NormalizedDepthLimits),
 	  delayAmpLossADSR(this, parameterStates.delayEnvelope.getAmplitudeLostPerEcho()->getAdsr(), "Amp Loss Per Echo", ADSREditor::ClassicKnobsWithScaleByIdx, ADSREditor::NormalizedDepthLimits)
 {
@@ -27,6 +29,7 @@ PluginEditor::PluginEditor(PluginProcessor& owner)
 	addAndMakeVisible(stereoADSR);
 	addAndMakeVisible(stereoLFOFreq);
 	addAndMakeVisible(stereoLFODepth);
+	addAndMakeVisible(detuneRandEditor);
 	addAndMakeVisible(detuneADSR);
 	addAndMakeVisible(detuneLFOFreq);
 	addAndMakeVisible(detuneLFODepth);
@@ -67,17 +70,17 @@ void PluginEditor::resized()
 
 	// position the ADSR editors
 	int padding = 6;
-	ADSREditor* volumeEditors[] = { &volumeADSR, &volumeLFOFreq, &volumeLFODepth, NULL };
-	ADSREditor* stereoEditors[] = { &stereoADSR, &stereoLFOFreq, &stereoLFODepth, NULL };
-	ADSREditor* detuneEditors[] = { &detuneADSR, &detuneLFOFreq, &detuneLFODepth, NULL };
-	ADSREditor* delayEditors[] = { &delaySpaceADSR, &delayAmpLossADSR, NULL };
+	ParameterEditor* volumeEditors[] = { &volumeADSR, &volumeLFOFreq, &volumeLFODepth, NULL };
+	ParameterEditor* stereoEditors[] = { &stereoADSR, &stereoLFOFreq, &stereoLFODepth, NULL };
+	ParameterEditor* detuneEditors[] = { &detuneRandEditor, &detuneADSR, &detuneLFOFreq, &detuneLFODepth, NULL };
+	ParameterEditor* delayEditors[] = { &delaySpaceADSR, &delayAmpLossADSR, NULL };
 	Point<int> editorStartPoints[] = { Point<int>(partialLevelsComponent.getWidth()+16, 30), Point<int>(4, 120), Point<int>(4, 210), Point<int>(4, 300) };
-	ADSREditor** editors[] = { volumeEditors, stereoEditors, detuneEditors, delayEditors };
+	ParameterEditor** editors[] = { volumeEditors, stereoEditors, detuneEditors, delayEditors };
 	int numEditors = sizeof(editors) / sizeof(ADSREditor**);
 	for (int row = 0; row < numEditors; ++row) {
 		Point<int> curPos = editorStartPoints[row];
 		for (int i = 0; editors[row][i] != NULL; ++i) {
-			ADSREditor *cur = editors[row][i];
+			ParameterEditor *cur = editors[row][i];
 			Rectangle<int> curBounds = cur->getLocalBounds();
 			curBounds.setPosition(curPos);
 			cur->setBounds(curBounds);

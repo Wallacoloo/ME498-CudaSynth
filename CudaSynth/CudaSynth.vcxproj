@@ -230,6 +230,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ADSREditor.cpp" />
+    <ClCompile Include="DetuneRandEditor.cpp" />
     <ClCompile Include="JuceLibraryCode\modules\juce_audio_basics\juce_audio_basics.cpp" />
     <ClCompile Include="JuceLibraryCode\modules\juce_audio_devices\juce_audio_devices.cpp" />
     <ClCompile Include="JuceLibraryCode\modules\juce_audio_formats\juce_audio_formats.cpp" />
@@ -259,6 +260,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
   <ItemGroup>
     <ClInclude Include="ADSREditor.h" />
     <ClInclude Include="defines.h" />
+    <ClInclude Include="DetuneRandEditor.h" />
     <ClInclude Include="kernel.h" />
     <ClInclude Include="ParameterEditor.h" />
     <ClInclude Include="PartialLevelsComponent.h" />

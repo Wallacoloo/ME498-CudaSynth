@@ -1,3 +1,6 @@
+#ifndef DEFINES_H
+#define DEFINES_H
+
 // set to 1 to disable CUDA even on cuda-enabled machines
 #ifndef NEVER_USE_CUDA
 #define NEVER_USE_CUDA 1
@@ -28,6 +31,10 @@
 
 #define MAX_DELAY_ECHOES 8
 
+// The detune effect allows one to vary the seed,
+//   but to create smooth transitions, we really interpolate between a fixed number of seeds
+#define DETUNE_NUM_SEEDS 4
+
 // # of audio frames per second
 #define SAMPLE_RATE 44100
 #define INV_SAMPLE_RATE (1.f/44100.f)
@@ -45,4 +52,6 @@
 #else
 	#define HOST
 	#define DEVICE
+#endif
+
 #endif

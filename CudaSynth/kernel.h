@@ -208,8 +208,24 @@ namespace kernel {
 		float randMix;
 		ADSRLFOEnvelope adsrLfo;
 	public:
+		DetuneEnvelope() {
+			randSeed = 0;
+			randMix = 0;
+		}
 		inline HOST DEVICE ADSRLFOEnvelope* getAdsrLfo() {
 			return &adsrLfo;
+		}
+		inline HOST DEVICE float getRandSeed() const {
+			return randSeed;
+		}
+		inline HOST DEVICE float getRandMix() const {
+			return randMix;
+		}
+		inline void setRandSeed(float s) {
+			this->randSeed = s;
+		}
+		inline void setRandMix(float m) {
+			this->randMix = m;
 		}
 	};
 
