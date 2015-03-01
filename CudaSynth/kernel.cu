@@ -20,8 +20,8 @@ namespace kernel {
 	unsigned ParameterStates::nextUUID(0);
 
 	// forward-declare necessary classes
-	class SynthVoiceState;
-	class SynthState;
+	struct SynthVoiceState;
+	struct SynthState;
 	// this is a circular buffer of sample data (interleaved by channel number) stored on the device
 	// It is persistent and lengthy, in order to accomodate the delay effect.
 	SynthState *d_synthState = NULL;
@@ -66,6 +66,10 @@ namespace kernel {
 		}
 		__device__ __host__ float valueAtIdx(unsigned idx) const {
 			return magAtIdx(idx)*sinf(phaseAtIdx(idx));
+		}
+		__device__ __host__ float freqAtIdx(unsigned idx) const {
+			// freq = d/dt (phase)
+			return phase_c1 + 2 * phase_c2*idx;
 		}
 	};
 
@@ -581,6 +585,17 @@ namespace kernel {
 		}
 	}
 
+	__device__ __host__ float antiAliasedVolumeForFreq(float angularFreq) {
+		float falloffWidth = 4000.f;
+		float invFalloffWidth = 0.00025f;
+		float falloffEnd = 0.5f*SAMPLE_RATE_RAD;
+		float falloffStart = falloffEnd - falloffWidth;
+		
+		float clamped = min(falloffEnd, max(falloffStart, angularFreq));
+		float level = 1.f - (clamped - falloffStart) * invFalloffWidth;
+		return level;
+	}
+
 	// compute the output for ONE sine wave over the current block
 	__device__ __host__ void computePartialOutput(SynthState *synthState, unsigned voiceNum, unsigned baseIdx, unsigned partialIdx, unsigned threadIdWithinPartial, float fundamentalFreq, bool released) {
 		SynthVoiceState *voiceState = &synthState->voiceStates[voiceNum];
@@ -592,8 +607,11 @@ namespace kernel {
 		for (unsigned sampleIdx = threadIdWithinPartial*NUM_SAMPLES_PER_THREAD; sampleIdx < (threadIdWithinPartial+1)*NUM_SAMPLES_PER_THREAD; ++sampleIdx) {
 			// Extract the sinusoidal portion of the wave.
 			float sinusoid = myState->sinusoid.valueAtIdx(sampleIdx);
+			// Compute a secondary envelope that prevents aliasing
+			float freq = myState->sinusoid.freqAtIdx(sampleIdx);
+			float antiAliasEnv = antiAliasedVolumeForFreq(freq);
 			// Get the ADSR/LFO volume envelope
-			float envelope = myState->volumeEnvelope.productAtIdx(sampleIdx);
+			float envelope = antiAliasEnv*myState->volumeEnvelope.productAtIdx(sampleIdx);
 			float pan = myState->stereoPanEnvelope.sumAtIdx(sampleIdx);
 			float unpanned = level*envelope*sinusoid;
 			// full left = -1 pan. full right = +1 pan.

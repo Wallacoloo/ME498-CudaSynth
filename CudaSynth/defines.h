@@ -35,12 +35,17 @@
 //   but to create smooth transitions, we really interpolate between a fixed number of seeds
 #define DETUNE_NUM_SEEDS 4
 
+#define PI        3.14159265358979323846
+#define PIf       3.14159265358979323846f
+#define TWICE_PI  6.28318530717958647692
+#define TWICE_PIf  6.28318530717958647692f
+
 // # of audio frames per second
 #define SAMPLE_RATE 44100
-#define INV_SAMPLE_RATE (1.f/44100.f)
+#define SAMPLE_RATE_RAD (SAMPLE_RATE*TWICE_PIf)
+#define INV_SAMPLE_RATE (1.f/SAMPLE_RATE)
 
-#define PI 3.14159265358979323846
-#define PIf 3.14159265358979323846f
+
 
 
 
