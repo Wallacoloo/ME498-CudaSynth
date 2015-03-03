@@ -6,6 +6,7 @@
 #include "PartialLevelsComponent.h"
 #include "ADSREditor.h"
 #include "DetuneRandEditor.h"
+#include "PiecewiseEditor.h"
 #include "kernel.h"
 
 class PluginEditor  : public AudioProcessorEditor
@@ -32,6 +33,7 @@ private:
 	ADSREditor detuneADSR, detuneLFOFreq, detuneLFODepth;
 	ADSREditor delaySpaceADSR;
 	ADSREditor delayAmpLossADSR;
+	PiecewiseEditor filterComponent;
     ScopedPointer<ResizableCornerComponent> resizer;
     ComponentBoundsConstrainer resizeLimits;
 

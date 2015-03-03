@@ -17,9 +17,9 @@ PluginEditor::PluginEditor(PluginProcessor& owner)
 	  detuneADSR(this, parameterStates.detuneEnvelope.getAdsrLfo()->getAdsr(), "Detune", ADSREditor::ClassicKnobsWithScaleByIdx, ADSREditor::NormalizedDepthLimits),
 	  detuneLFOFreq(this, parameterStates.detuneEnvelope.getAdsrLfo()->getLfo()->getFreqAdsr(), "LFO Freq", ADSREditor::AsrWithPeaksKnobs, ADSREditor::LFOFrequencyLimits),
 	  detuneLFODepth(this, parameterStates.detuneEnvelope.getAdsrLfo()->getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimitsPlusOrMinus),
-	  
 	  delaySpaceADSR(this, parameterStates.delayEnvelope.getSpaceBetweenEchoes()->getAdsr(), "Delay Time", ADSREditor::ClassicKnobsWithScaleByIdx, ADSREditor::NormalizedDepthLimits),
-	  delayAmpLossADSR(this, parameterStates.delayEnvelope.getAmplitudeLostPerEcho()->getAdsr(), "Amp Loss Per Echo", ADSREditor::ClassicKnobsWithScaleByIdx, ADSREditor::NormalizedDepthLimits)
+	  delayAmpLossADSR(this, parameterStates.delayEnvelope.getAmplitudeLostPerEcho()->getAdsr(), "Amp Loss Per Echo", ADSREditor::ClassicKnobsWithScaleByIdx, ADSREditor::NormalizedDepthLimits),
+	  filterComponent(this, parameterStates.filterEnvelope.getShape())
 {
 	// add the parameter editors
 	addAndMakeVisible(partialLevelsComponent);
@@ -35,6 +35,7 @@ PluginEditor::PluginEditor(PluginProcessor& owner)
 	addAndMakeVisible(detuneLFODepth);
 	addAndMakeVisible(delaySpaceADSR);
 	addAndMakeVisible(delayAmpLossADSR);
+	addAndMakeVisible(filterComponent);
 
     // add the midi keyboard component
     addAndMakeVisible (midiKeyboard);
@@ -87,6 +88,9 @@ void PluginEditor::resized()
 			curPos = cur->getBounds().getTopRight().translated(padding, 0);
 		}
 	}
+	// position the filter
+	filterComponent.setBounds(4, editorStartPoints[numEditors - 1].getY() + 100, 128, 128);
+
 	// position the keyboard
 	midiKeyboard.setBounds(4, getHeight() - keyboardHeight - 4, getWidth() - 8, keyboardHeight);
 	// add a resizer element to bottom-right.

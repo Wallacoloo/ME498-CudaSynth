@@ -14,7 +14,46 @@
 // sustain, end mode segments have finited length. Choose something long, but not so long that rounding errors arise
 #define ADSR_LONG_SEGMENT_LENGTH 4096.f
 
+
 namespace kernel {
+
+
+	class PiecewiseFunction {
+		struct Point {
+			float time, level;
+		};
+		Point pieces[PIECEWISE_MAX_PIECES];
+	public:
+		PiecewiseFunction() {
+			for (int i = 0; i < numPoints(); ++i) {
+				pieces[i].time = 0;
+				pieces[i].level = 0;
+			}
+		}
+		float startTimeOfPiece(int pieceNum) const {
+			return pieces[pieceNum].time;
+		}
+		float startLevelOfPiece(int pieceNum) const {
+			return pieces[pieceNum].level;
+		}
+		unsigned numPoints() const {
+			return PIECEWISE_MAX_PIECES;
+		}
+		// shift the point and all following points such that:
+		//   this point starts at the absolute time newStartTime
+		//   and has level newLevel
+		// return the actual startTime (e.g. if we try to set a negative length)
+		float movePoint(int pointNum, float newStartTime, float newLevel) {
+			if (pointNum == 0) {
+				newStartTime = 0.f;
+			} else {
+				newStartTime = std::max(startTimeOfPiece(pointNum-1), newStartTime);
+			}
+			pieces[pointNum].time = newStartTime;
+			pieces[pointNum].level = newLevel;
+			return newStartTime;
+		}
+	};
 
 	class ADSR {
 	public:
@@ -241,6 +280,14 @@ namespace kernel {
 		}
 	};
 
+	class FilterEnvelope {
+		PiecewiseFunction shape;
+	public:
+		HOST DEVICE PiecewiseFunction* getShape() {
+			return &shape;
+		}
+	};
+
 	// Struct to hold ALL parameter states at a single instant in time.
 	// There will be two of these sent during each synthesis block:
 	//   1 for at the start of the block,
@@ -255,6 +302,7 @@ namespace kernel {
 		ADSRLFOEnvelope stereoPanEnvelope;
 		DetuneEnvelope detuneEnvelope;
 		DelayEnvelope delayEnvelope;
+		FilterEnvelope filterEnvelope;
 		ParameterStates() {
 			UUID = nextUUID++;
 			// initialize partials to uniform level
