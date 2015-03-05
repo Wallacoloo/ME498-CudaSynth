@@ -31,7 +31,8 @@ void PiecewiseEditor::paint(Graphics &g)
 	float ptRad = 2.5f;
 	float x = 0.f;
 	float y = 0.f;
-	for (int p = 0; p < func->numPoints(); ++p) {
+	int numPoints = func->numPoints();
+	for (int p = 0; p < numPoints; ++p) {
 		float newX = func->startTimeOfPiece(p)*xScale;
 		float newY = height-func->startLevelOfPiece(p)*yScale;
 		// show the line
@@ -69,18 +70,40 @@ void PiecewiseEditor::mouseDown(const MouseEvent &event) {
 	float xScale = pxPerUnitX();
 	float yScale = pxPerUnitY();
 	float height = getHeight();
-	float thresh = 81.f; // max distance^2 to grab a point
-	for (int p = 0; p < func->numPoints(); ++p) {
-		float x = func->startTimeOfPiece(p)*xScale;
-		float y = height-func->startLevelOfPiece(p)*yScale;
-		if ((x - mx)*(x - mx) + (y - my)*(y - my) <= thresh) {
-			idxOfDraggingPoint = p;
+	
+	if (relEvt.getNumberOfClicks() == 1) {
+		// if single-click, then determine the point to drag
+		float thresh = 81.f; // max distance^2 to grab a point
+		int numPoints = func->numPoints();
+		for (int p = 0; p < numPoints; ++p) {
+			float x = func->startTimeOfPiece(p)*xScale;
+			float y = height - func->startLevelOfPiece(p)*yScale;
+			if ((x - mx)*(x - mx) + (y - my)*(y - my) <= thresh) {
+				idxOfDraggingPoint = p;
+			}
+		}
+	} else if (relEvt.getNumberOfClicks() == 2) {
+		// double click: insert a new point
+		float t = mx / pxPerUnitX();
+		float v = (height-my) / pxPerUnitY();
+		idxOfDraggingPoint = func->insertPoint(t, v);
+	}
+	if (relEvt.mods.isLeftButtonDown() && !relEvt.mods.isCtrlDown()) {
+		// move point if it was a left-click
+		updateFromMouseEvent(relEvt);
+	} else if (relEvt.mods.isLeftButtonDown() && relEvt.mods.isCtrlDown()) {
+		// delete point if ctrl + left-click;
+		if (idxOfDraggingPoint != -1) {
+			func->removePoint(idxOfDraggingPoint);
+			idxOfDraggingPoint = -1;
+			repaint();
 		}
 	}
-	updateFromMouseEvent(event);
 }
 
 
 void PiecewiseEditor::mouseDrag(const MouseEvent &event) {
-	updateFromMouseEvent(event);
+	if (event.mods.isLeftButtonDown() && !event.mods.isCtrlDown()) {
+		updateFromMouseEvent(event.getEventRelativeTo(this));
+	}
 }

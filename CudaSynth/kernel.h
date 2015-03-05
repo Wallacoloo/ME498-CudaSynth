@@ -19,15 +19,17 @@ namespace kernel {
 
 
 	class PiecewiseFunction {
+		// if a point has level=NAN, it should be considered as non-existent
+		// non-existent points should only be located at the END of the array
 		struct Point {
 			float time, level;
 		};
 		Point pieces[PIECEWISE_MAX_PIECES];
 	public:
 		PiecewiseFunction() {
-			for (int i = 0; i < numPoints(); ++i) {
+			for (int i = 0; i < PIECEWISE_MAX_PIECES; ++i) {
 				pieces[i].time = 0;
-				pieces[i].level = 0;
+				pieces[i].level = NAN;
 			}
 		}
 		float startTimeOfPiece(int pieceNum) const {
@@ -37,6 +39,11 @@ namespace kernel {
 			return pieces[pieceNum].level;
 		}
 		unsigned numPoints() const {
+			for (int p = 0; p < PIECEWISE_MAX_PIECES; ++p) {
+				if (std::isnan(pieces[p].level)) {
+					return p;
+				}
+			}
 			return PIECEWISE_MAX_PIECES;
 		}
 		// shift the point and all following points such that:
@@ -55,6 +62,42 @@ namespace kernel {
 				pieces[p].time += shiftAmt;
 			}
 			return newStartTime;
+		}
+		// insert a new point with given time & level.
+		// return the index of said point
+		int insertPoint(float newStartTime, float newLevel) {
+			int nextPoint = numPoints();
+			// check if we can allocate a new point
+			if (nextPoint == PIECEWISE_MAX_PIECES) {
+				return -1;
+			}
+			// determine where to insert the point
+			int maxPBefore;
+			for (maxPBefore = 0; maxPBefore < nextPoint-1; ++maxPBefore) {
+				if (pieces[maxPBefore+1].time > newStartTime) {
+					break;
+				}
+			}
+			// insert the point by swapping our data with maxPBefore+1,
+			// and then pushing those changes down the line
+			float lastPointTime = newStartTime;
+			float lastPointLevel = newLevel;
+			for (int p = maxPBefore + 1; p <= nextPoint; ++p) {
+				std::swap(pieces[p].time, lastPointTime);
+				std::swap(pieces[p].level, lastPointLevel);
+			}
+			// return index of the point we inserted
+			return maxPBefore + 1;
+		}
+		void removePoint(int pointNum) {
+			int newNumPoints = numPoints() - 1;
+			// shift all points up
+			for (int p = pointNum; p < newNumPoints; ++p) {
+				std::swap(pieces[p].time, pieces[p + 1].time);
+				std::swap(pieces[p].level, pieces[p + 1].level);
+			}
+			// delete the previous point
+			pieces[newNumPoints].level = NAN;
 		}
 	};
 
