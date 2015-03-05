@@ -89,7 +89,9 @@ void PluginEditor::resized()
 		}
 	}
 	// position the filter
-	filterComponent.setBounds(4, editorStartPoints[numEditors - 1].getY() + 100, 128, 128);
+	float filterWidth = 256;
+	float filterHeight = 128;
+	filterComponent.setBounds(4, editorStartPoints[numEditors - 1].getY() + 100, filterWidth, filterHeight);
 
 	// position the keyboard
 	midiKeyboard.setBounds(4, getHeight() - keyboardHeight - 4, getWidth() - 8, keyboardHeight);

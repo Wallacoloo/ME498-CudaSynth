@@ -49,8 +49,11 @@ namespace kernel {
 			} else {
 				newStartTime = std::max(startTimeOfPiece(pointNum-1), newStartTime);
 			}
-			pieces[pointNum].time = newStartTime;
 			pieces[pointNum].level = newLevel;
+			float shiftAmt = newStartTime - pieces[pointNum].time;
+			for (int p = pointNum; p < numPoints(); ++p) {
+				pieces[p].time += shiftAmt;
+			}
 			return newStartTime;
 		}
 	};
@@ -283,6 +286,12 @@ namespace kernel {
 	class FilterEnvelope {
 		PiecewiseFunction shape;
 	public:
+		FilterEnvelope() {
+			shape.movePoint(0, 0, 0);
+			shape.movePoint(1, 0, 1);
+			shape.movePoint(2, NYQUIST_RATE_RAD, 1);
+			shape.movePoint(3, NYQUIST_RATE_RAD, 0);
+		}
 		HOST DEVICE PiecewiseFunction* getShape() {
 			return &shape;
 		}
