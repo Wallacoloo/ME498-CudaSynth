@@ -308,6 +308,77 @@ namespace kernel {
 		}
 	};
 
+	class FilterState {
+		// have a bunch of piecewise linear functions.
+		// can split into y(w) = sum of yn(w)
+		// where yn(w) = { an*w + bn, Ln < w < Rn
+		//			       0, otherwise }
+		// This is achieved via two comparisons and two multiplies on top of evaluating an*w + bn.
+		// Alternatively:
+		// yn(w) = an*clamp(w, Ln, Rn) + bn
+		// This is just 2 extra min/max calls (same cost as a comparison)
+		// The catch is that yn(w) is not zero outside of its active domain
+		// we can actually go further:
+		// yn(w) = an*max(w, Ln) + bn
+		// merge the constants:
+		// y(w) = sum[an*max(w, Ln)] + b
+		// determining the coefficients becomes slightly more difficult. 
+		// an can be solved by knowing the slope along each interval.
+		// b can be solved by substituting y(0) = sum[an*Ln] + b
+		struct Piece {
+			float beginTime;
+			float slope;
+		};
+		Piece pieces[PIECEWISE_MAX_PIECES];
+		float b;
+		float freq_c0, freq_c1;
+	public:
+		__device__ __host__ void atBlockStart(FilterEnvelope *envStart, FilterEnvelope *envEnd, float freqStart, float freqEnd, bool released) {
+			// set the frequency coefficients such that:
+			// w(idx) = freq_c0 + freq_c1*idx
+			// w(0) = freqStart,
+			// w(BUFFER_BLOCK_SIZE) = freqEnd,
+			freq_c0 = freqStart;
+			freq_c1 = (freqEnd - freqStart) * INV_BUFFER_BLOCK_SIZE;
+			// determine the coefficients.
+			// no filter interpolation for now, since that requires doubling the number of nodes
+			PiecewiseFunction *func = envEnd->getShape();
+			unsigned numActivePieces = func->numPoints();
+			float y0 = func->startLevelOfPiece(0);
+			float offsetSum = 0;
+			float prevSlope = 0.f;
+			for (unsigned i = 0; i < numActivePieces; ++i) {
+				float thisBeginTime = func->startTimeOfPiece(i);
+				float overallSlope = (i + 1 == numActivePieces) ? 0.f
+					: (func->startLevelOfPiece(i + 1) - func->startLevelOfPiece(i))
+					  / (func->startTimeOfPiece(i + 1) - thisBeginTime);
+				float thisSlope = overallSlope - prevSlope;
+				prevSlope = overallSlope;
+				pieces[i].slope = thisSlope;
+				pieces[i].beginTime = thisBeginTime;
+				offsetSum += thisSlope*thisBeginTime;
+			}
+			// determine the coefficient 'b':
+			// y(0) = sum[slope_n*beginTime_n] + b
+			// b = y(0) - sum[slope_n*beginTime_n]
+			b = y0 - offsetSum;
+			// zero contributions from inactive pieces
+			for (unsigned i = numActivePieces; i < PIECEWISE_MAX_PIECES; ++i) {
+				pieces[i].slope = 0;
+				pieces[i].beginTime = 0;
+			}
+		}
+		__device__ __host__ float valueAtIdx(unsigned idx) const {
+			// y(w) = sum[an*max(w, Ln)] + b
+			float sum = b;
+			float w = freq_c0 + idx*freq_c1;
+			for (int i = 0; i < PIECEWISE_MAX_PIECES; ++i) {
+				sum += pieces[i].slope * max(w, pieces[i].beginTime);
+			}
+			return sum;
+		}
+	};
+
 	// Contains info about the parameter states at ANY sample in the block
 	struct FullBlockParameterInfo {
 		ParameterStates start;
