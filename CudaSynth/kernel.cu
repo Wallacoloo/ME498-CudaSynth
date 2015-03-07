@@ -349,9 +349,10 @@ namespace kernel {
 			float prevSlope = 0.f;
 			for (unsigned i = 0; i < numActivePieces; ++i) {
 				float thisBeginTime = func->startTimeOfPiece(i);
+				float nextTime = func->startTimeOfPiece(i + 1);
+				float thisLength = nextTime - thisBeginTime;
 				float overallSlope = (i + 1 == numActivePieces) ? 0.f
-					: (func->startLevelOfPiece(i + 1) - func->startLevelOfPiece(i))
-					  / (func->startTimeOfPiece(i + 1) - thisBeginTime);
+					: (func->startLevelOfPiece(i + 1) - func->startLevelOfPiece(i)) / thisLength;
 				float thisSlope = overallSlope - prevSlope;
 				prevSlope = overallSlope;
 				pieces[i].slope = thisSlope;
@@ -392,6 +393,7 @@ namespace kernel {
 		ADSRLFOEnvelopeState stereoPanEnvelope;
 		DetuneEnvelopeState detuneEnvelope;
 		DelayEnvelopeState delayState;
+		FilterState filterState;
 		PartialState() {}
 		PartialState(struct SynthState *synthState, unsigned voiceNum, unsigned partialIdx) {}
 		__device__ __host__ void atBlockStart(SynthState *synthState, SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq, bool released);
@@ -431,11 +433,14 @@ namespace kernel {
 		float baseFreq = (partialIdx + 1)*fundamentalFreq;
 		float detuneStart = detuneEnvelope.valueAtIdx(0);
 		float detuneEnd = detuneEnvelope.valueAtIdx(BUFFER_BLOCK_SIZE);
+		float freqStart = baseFreq*(1.f + detuneStart);
+		float freqEnd = baseFreq*(1.f + detuneEnd);
 
 		// configure the sinusoid to transition from the starting frequency to the end frequency
-		sinusoid.newFrequencyAndDepth(baseFreq*(1.f+detuneStart), baseFreq*(1.f+detuneEnd), 1.f, 1.f);
+		sinusoid.newFrequencyAndDepth(freqStart, freqEnd, 1.f, 1.f);
 		volumeEnvelope.atBlockStart(&startParams->volumeEnvelope, &endParams->volumeEnvelope, partialIdx, released, didParamsChange);
 		stereoPanEnvelope.atBlockStart(&startParams->stereoPanEnvelope, &endParams->stereoPanEnvelope, partialIdx, released, didParamsChange);
+		filterState.atBlockStart(&startParams->filterEnvelope, &endParams->filterEnvelope, freqStart, freqEnd, released);
 	}
 
 	static void printCudaDeviveProperties(cudaDeviceProp devProp) {
@@ -680,9 +685,10 @@ namespace kernel {
 			float sinusoid = myState->sinusoid.valueAtIdx(sampleIdx);
 			// Compute a secondary envelope that prevents aliasing
 			float freq = myState->sinusoid.freqAtIdx(sampleIdx);
+			float filterEnv = myState->filterState.valueAtIdx(sampleIdx);
 			float antiAliasEnv = antiAliasedVolumeForFreq(freq);
 			// Get the ADSR/LFO volume envelope
-			float envelope = antiAliasEnv*myState->volumeEnvelope.productAtIdx(sampleIdx);
+			float envelope = antiAliasEnv*filterEnv*myState->volumeEnvelope.productAtIdx(sampleIdx);
 			float pan = myState->stereoPanEnvelope.sumAtIdx(sampleIdx);
 			float unpanned = level*envelope*sinusoid;
 			// full left = -1 pan. full right = +1 pan.

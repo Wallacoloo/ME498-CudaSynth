@@ -14,6 +14,10 @@
 // sustain, end mode segments have finited length. Choose something long, but not so long that rounding errors arise
 #define ADSR_LONG_SEGMENT_LENGTH 4096.f
 
+// logic in kernel may depend upon no infinite-slope segments
+// floating point numbers can represent all integers up to 16,777,216 (2^24)
+#define PIECEWISE_MIN_PIECE_LENGTH 1.f
+
 
 namespace kernel {
 
@@ -32,15 +36,15 @@ namespace kernel {
 				pieces[i].level = NAN;
 			}
 		}
-		float startTimeOfPiece(int pieceNum) const {
+		HOST DEVICE float startTimeOfPiece(int pieceNum) const {
 			return pieces[pieceNum].time;
 		}
-		float startLevelOfPiece(int pieceNum) const {
+		HOST DEVICE float startLevelOfPiece(int pieceNum) const {
 			return pieces[pieceNum].level;
 		}
-		unsigned numPoints() const {
+		HOST DEVICE unsigned numPoints() const {
 			for (int p = 0; p < PIECEWISE_MAX_PIECES; ++p) {
-				if (std::isnan(pieces[p].level)) {
+				if (isnan(pieces[p].level)) {
 					return p;
 				}
 			}
@@ -54,7 +58,7 @@ namespace kernel {
 			if (pointNum == 0) {
 				newStartTime = 0.f;
 			} else {
-				newStartTime = std::max(startTimeOfPiece(pointNum-1), newStartTime);
+				newStartTime = std::max(startTimeOfPiece(pointNum-1)+PIECEWISE_MIN_PIECE_LENGTH, newStartTime);
 			}
 			pieces[pointNum].level = newLevel;
 			float shiftAmt = newStartTime - pieces[pointNum].time;

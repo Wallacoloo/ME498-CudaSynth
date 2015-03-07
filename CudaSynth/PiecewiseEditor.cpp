@@ -14,10 +14,16 @@ PiecewiseEditor::~PiecewiseEditor()
 }
 
 float PiecewiseEditor::pxPerUnitX() const {
-	return 0.001;
+	return getWidth() / NYQUIST_RATE_RAD;
 }
 float PiecewiseEditor::pxPerUnitY() const {
-	return 20;
+	return getHeight() / 10.f;
+}
+float PiecewiseEditor::clampFreq(float f) const {
+	return std::max(0.f, std::min((float)NYQUIST_RATE_RAD, f));
+}
+float PiecewiseEditor::clampGain(float g) const {
+	return std::min(10.f, std::max(0.f, g));
 }
 
 void PiecewiseEditor::paint(Graphics &g)
@@ -54,9 +60,10 @@ void PiecewiseEditor::updateFromMouseEvent(const MouseEvent &event) {
 	float height = getHeight();
 	int x = event.getPosition().getX();
 	int y = height-event.getPosition().getY();
-	float t = x/pxPerUnitX();
-	float v = y/pxPerUnitY();
+	float t = clampFreq(x/pxPerUnitX());
+	float v = clampGain(y / pxPerUnitY());
 	func->movePoint(idxOfDraggingPoint, t, v);
+	editor->parametersChanged();
 	repaint();
 }
 
@@ -84,8 +91,8 @@ void PiecewiseEditor::mouseDown(const MouseEvent &event) {
 		}
 	} else if (relEvt.getNumberOfClicks() == 2) {
 		// double click: insert a new point
-		float t = mx / pxPerUnitX();
-		float v = (height-my) / pxPerUnitY();
+		float t = clampFreq(mx / pxPerUnitX());
+		float v = clampGain((height - my) / pxPerUnitY());
 		idxOfDraggingPoint = func->insertPoint(t, v);
 	}
 	if (relEvt.mods.isLeftButtonDown() && !relEvt.mods.isCtrlDown()) {
@@ -96,6 +103,7 @@ void PiecewiseEditor::mouseDown(const MouseEvent &event) {
 		if (idxOfDraggingPoint != -1) {
 			func->removePoint(idxOfDraggingPoint);
 			idxOfDraggingPoint = -1;
+			editor->parametersChanged();
 			repaint();
 		}
 	}

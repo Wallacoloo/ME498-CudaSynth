@@ -15,6 +15,8 @@ class PiecewiseEditor : public Component
 
 	float pxPerUnitX() const;
 	float pxPerUnitY() const;
+	float clampFreq(float f) const;
+	float clampGain(float g) const;
 	void updateFromMouseEvent(const MouseEvent &event);
 public:
 	PiecewiseEditor(PluginEditor *editor, PiecewiseFunction *func);
