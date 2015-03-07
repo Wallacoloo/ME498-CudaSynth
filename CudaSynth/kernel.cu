@@ -403,6 +403,9 @@ namespace kernel {
 		FullBlockParameterInfo parameterInfo;
 		PartialState partialStates[NUM_THREADS_PER_PARTIAL][NUM_PARTIALS];
 		float sampleBuffer[CIRCULAR_BUFFER_LEN*NUM_CH];
+		SynthVoiceState() {
+			memset(sampleBuffer, 0, sizeof(sampleBuffer));
+		}
 	};
 
 	// Packages all the state-related information for the synth in one class to store persistently on the device
@@ -517,17 +520,19 @@ namespace kernel {
 		atexit(&teardown);
 		//SynthState defaultState;
 		std::unique_lock<std::mutex> stateLock(synthStateMutex);
+		SynthState *defaultState = new SynthState();
 		if (hasCudaDevice()) {
 			// allocate sample buffer on device
 			checkCudaError(cudaMalloc(&d_synthState, sizeof(SynthState)));
-			checkCudaError(cudaMemset(d_synthState, 0, sizeof(SynthState)));
-			//checkCudaError(cudaMemcpy(d_synthState, &defaultState, sizeof(SynthState), cudaMemcpyHostToDevice));
+			//checkCudaError(cudaMemset(d_synthState, 0, sizeof(SynthState)));
+			checkCudaError(cudaMemcpy(d_synthState, defaultState, sizeof(SynthState), cudaMemcpyHostToDevice));
 		} else {
 			// allocate sample buffer on cpu
 			d_synthState = (SynthState*)malloc(sizeof(SynthState));
-			memset(d_synthState, 0, sizeof(SynthState));
-			//memcpy(d_synthState, &defaultState, sizeof(SynthState));
+			//memset(d_synthState, 0, sizeof(SynthState));
+			memcpy(d_synthState, defaultState, sizeof(SynthState));
 		}
+		delete defaultState;
 	}
 
 	static void doStartupOnce() {
