@@ -34,6 +34,7 @@ private:
 	ADSREditor delaySpaceADSR;
 	ADSREditor delayAmpLossADSR;
 	PiecewiseEditor filterComponent;
+	ADSREditor filterADSR;
     ScopedPointer<ResizableCornerComponent> resizer;
     ComponentBoundsConstrainer resizeLimits;
 

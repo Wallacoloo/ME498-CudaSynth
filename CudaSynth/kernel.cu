@@ -309,6 +309,7 @@ namespace kernel {
 	};
 
 	class FilterState {
+		ADSRState shiftState;
 		// have a bunch of piecewise linear functions.
 		// can split into y(w) = sum of yn(w)
 		// where yn(w) = { an*w + bn, Ln < w < Rn
@@ -333,7 +334,8 @@ namespace kernel {
 		float b;
 		float freq_c0, freq_c1;
 	public:
-		__device__ __host__ void atBlockStart(FilterEnvelope *envStart, FilterEnvelope *envEnd, float freqStart, float freqEnd, bool released) {
+		__device__ __host__ void atBlockStart(FilterEnvelope *envStart, FilterEnvelope *envEnd, float freqStart, float freqEnd, bool released, bool didParamsChange) {
+			shiftState.atBlockStart(envStart->getShift(), envEnd->getShift(), 0, released, didParamsChange);
 			// set the frequency coefficients such that:
 			// w(idx) = freq_c0 + freq_c1*idx
 			// w(0) = freqStart,
@@ -373,6 +375,8 @@ namespace kernel {
 			// y(w) = sum[an*max(w, Ln)] + b
 			float sum = b;
 			float w = freq_c0 + idx*freq_c1;
+			// transpose the envelope by shiftin the frequency
+			w -= shiftState.valueAtIdx(idx);
 			for (int i = 0; i < PIECEWISE_MAX_PIECES; ++i) {
 				sum += pieces[i].slope * max(w, pieces[i].beginTime);
 			}
@@ -443,7 +447,7 @@ namespace kernel {
 		sinusoid.newFrequencyAndDepth(freqStart, freqEnd, 1.f, 1.f);
 		volumeEnvelope.atBlockStart(&startParams->volumeEnvelope, &endParams->volumeEnvelope, partialIdx, released, didParamsChange);
 		stereoPanEnvelope.atBlockStart(&startParams->stereoPanEnvelope, &endParams->stereoPanEnvelope, partialIdx, released, didParamsChange);
-		filterState.atBlockStart(&startParams->filterEnvelope, &endParams->filterEnvelope, freqStart, freqEnd, released);
+		filterState.atBlockStart(&startParams->filterEnvelope, &endParams->filterEnvelope, freqStart, freqEnd, released, didParamsChange);
 	}
 
 	static void printCudaDeviveProperties(cudaDeviceProp devProp) {
@@ -518,18 +522,15 @@ namespace kernel {
 	// code to run on first-time audio calculation
 	static void startup() {
 		atexit(&teardown);
-		//SynthState defaultState;
 		std::unique_lock<std::mutex> stateLock(synthStateMutex);
 		SynthState *defaultState = new SynthState();
 		if (hasCudaDevice()) {
 			// allocate sample buffer on device
 			checkCudaError(cudaMalloc(&d_synthState, sizeof(SynthState)));
-			//checkCudaError(cudaMemset(d_synthState, 0, sizeof(SynthState)));
 			checkCudaError(cudaMemcpy(d_synthState, defaultState, sizeof(SynthState), cudaMemcpyHostToDevice));
 		} else {
 			// allocate sample buffer on cpu
 			d_synthState = (SynthState*)malloc(sizeof(SynthState));
-			//memset(d_synthState, 0, sizeof(SynthState));
 			memcpy(d_synthState, defaultState, sizeof(SynthState));
 		}
 		delete defaultState;

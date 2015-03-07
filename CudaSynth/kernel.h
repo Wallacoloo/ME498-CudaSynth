@@ -332,15 +332,21 @@ namespace kernel {
 
 	class FilterEnvelope {
 		PiecewiseFunction shape;
+		ADSR shift;
 	public:
 		FilterEnvelope() {
 			shape.movePoint(0, 0, 0);
 			shape.movePoint(1, 0, 1);
 			shape.movePoint(2, NYQUIST_RATE_RAD, 1);
 			shape.movePoint(3, NYQUIST_RATE_RAD, 0);
+			shift.setSustain(0); // no shift
+			shift.setPeakLevel(0);
 		}
 		HOST DEVICE PiecewiseFunction* getShape() {
 			return &shape;
+		}
+		HOST DEVICE ADSR* getShift() {
+			return &shift;
 		}
 	};
 

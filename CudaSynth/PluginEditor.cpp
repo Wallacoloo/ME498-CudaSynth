@@ -19,7 +19,8 @@ PluginEditor::PluginEditor(PluginProcessor& owner)
 	  detuneLFODepth(this, parameterStates.detuneEnvelope.getAdsrLfo()->getLfo()->getDepthAdsr(), "LFO Depth", ADSREditor::AsrWithPeaksKnobs, ADSREditor::NormalizedDepthLimitsPlusOrMinus),
 	  delaySpaceADSR(this, parameterStates.delayEnvelope.getSpaceBetweenEchoes()->getAdsr(), "Delay Time", ADSREditor::ClassicKnobsWithScaleByIdx, ADSREditor::NormalizedDepthLimits),
 	  delayAmpLossADSR(this, parameterStates.delayEnvelope.getAmplitudeLostPerEcho()->getAdsr(), "Amp Loss Per Echo", ADSREditor::ClassicKnobsWithScaleByIdx, ADSREditor::NormalizedDepthLimits),
-	  filterComponent(this, parameterStates.filterEnvelope.getShape())
+	  filterComponent(this, parameterStates.filterEnvelope.getShape()),
+	  filterADSR(this, parameterStates.filterEnvelope.getShift(), "Transpose", ADSREditor::ClassicKnobsWithPeakNoShiftByIdx, ADSREditor::FreqFilterDepthLimits)
 {
 	// add the parameter editors
 	addAndMakeVisible(partialLevelsComponent);
@@ -36,6 +37,7 @@ PluginEditor::PluginEditor(PluginProcessor& owner)
 	addAndMakeVisible(delaySpaceADSR);
 	addAndMakeVisible(delayAmpLossADSR);
 	addAndMakeVisible(filterComponent);
+	addAndMakeVisible(filterADSR);
 
     // add the midi keyboard component
     addAndMakeVisible (midiKeyboard);
@@ -69,29 +71,31 @@ void PluginEditor::resized()
 
 	partialLevelsComponent.setBounds(partialLevelsComponent.getLocalBounds().translated(4, 0));
 
+	// size the filter
+	float filterWidth = 256;
+	float filterHeight = 128;
+	filterComponent.setBounds(0, 0, filterWidth, filterHeight);
+
 	// position the ADSR editors
 	int padding = 6;
-	ParameterEditor* volumeEditors[] = { &volumeADSR, &volumeLFOFreq, &volumeLFODepth, NULL };
-	ParameterEditor* stereoEditors[] = { &stereoADSR, &stereoLFOFreq, &stereoLFODepth, NULL };
-	ParameterEditor* detuneEditors[] = { &detuneRandEditor, &detuneADSR, &detuneLFOFreq, &detuneLFODepth, NULL };
-	ParameterEditor* delayEditors[] = { &delaySpaceADSR, &delayAmpLossADSR, NULL };
-	Point<int> editorStartPoints[] = { Point<int>(partialLevelsComponent.getWidth()+16, 30), Point<int>(4, 120), Point<int>(4, 210), Point<int>(4, 300) };
-	ParameterEditor** editors[] = { volumeEditors, stereoEditors, detuneEditors, delayEditors };
+	Component* volumeEditors[] = { &volumeADSR, &volumeLFOFreq, &volumeLFODepth, NULL };
+	Component* stereoEditors[] = { &stereoADSR, &stereoLFOFreq, &stereoLFODepth, NULL };
+	Component* detuneEditors[] = { &detuneRandEditor, &detuneADSR, &detuneLFOFreq, &detuneLFODepth, NULL };
+	Component* delayEditors[] = { &delaySpaceADSR, &delayAmpLossADSR, NULL };
+	Component* filterEditors[] = { &filterComponent, &filterADSR, NULL };
+	Point<int> editorStartPoints[] = { Point<int>(partialLevelsComponent.getWidth() + 16, 30), Point<int>(4, 120), Point<int>(4, 210), Point<int>(4, 300), Point<int>(4, 390) };
+	Component** editors[] = { volumeEditors, stereoEditors, detuneEditors, delayEditors, filterEditors };
 	int numEditors = sizeof(editors) / sizeof(ADSREditor**);
 	for (int row = 0; row < numEditors; ++row) {
 		Point<int> curPos = editorStartPoints[row];
 		for (int i = 0; editors[row][i] != NULL; ++i) {
-			ParameterEditor *cur = editors[row][i];
+			Component *cur = editors[row][i];
 			Rectangle<int> curBounds = cur->getLocalBounds();
 			curBounds.setPosition(curPos);
 			cur->setBounds(curBounds);
 			curPos = cur->getBounds().getTopRight().translated(padding, 0);
 		}
 	}
-	// position the filter
-	float filterWidth = 256;
-	float filterHeight = 128;
-	filterComponent.setBounds(4, editorStartPoints[numEditors - 1].getY() + 100, filterWidth, filterHeight);
 
 	// position the keyboard
 	midiKeyboard.setBounds(4, getHeight() - keyboardHeight - 4, getWidth() - 8, keyboardHeight);

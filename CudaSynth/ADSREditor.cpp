@@ -10,15 +10,23 @@ static const char* tooltips[] = { "Start Level", "Attack Length", "Peak Level",
 static const float classicAdsrParameterBounds[][2] = { { 0, 1 }, { 0, 2 }, { 0, 1 }, { 0, 2 }, { 0, 1 }, { 0, 2 }, { 0, 1 }, { -0.8f, 5.0f }, { -1.0f, 5.0f } };
 static const float classicAdsrParameterBoundsPlusOrMinus[][2] = { { -1, 1 }, { 0, 2 }, { -1, 1 }, { 0, 2 }, { -1, 1 }, { 0, 2 }, { -1, 1 }, { -0.8f, 5.0f }, { -1.0f, 5.0f } };
 static const int classicAdsrUsableIndices[]         = { 1, 3, 4, 5, 7, -1 };
+static const int classAdsrNoShiftUsableIndices[] = { 1, 3, 4, 5, -1 };
+static const int classApdsrNoShiftUsableIndices[] = { 1, 2, 3, 4, 5, -1 };
 static const int classicAdsrWithScaleByIdxUsableIndices[] = { 1, 3, 4, 5, 7, 8, -1 };
 // For the case where we have no decay phase and peaks are controllable.
 // ADSR starts at arbitrary value, decays to sustain, and then releases to arbitrary value
 static const float lfoFreqParameterBounds[][2] = { { 0, 100 }, { 0, 2 }, { 0, 100 }, { 0, 2 }, { 0, 100 }, { 0, 2 }, { 0, 100 }, { -0.8f, 5.0f }, { -1.0f, 5.0f } };
 static const int asrWithPeaksUsableIndices[]        = { 2, 3, 4, 5, 6, 7, 8, -1 };
+// For the filter shift envelope:
+static const float classicAdsrFilterParameterBounds[][2] = { { -NYQUIST_RATE_RAD, NYQUIST_RATE_RAD }, { 0, 2 }, { -NYQUIST_RATE_RAD, NYQUIST_RATE_RAD }, { 0, 2 }, { -NYQUIST_RATE_RAD, NYQUIST_RATE_RAD }, { 0, 2 }, { -NYQUIST_RATE_RAD, NYQUIST_RATE_RAD }, { -0.8f, 5.0f }, { -1.0f, 5.0f } };
 
 static const int* usableIndicesFromOptions(ADSREditor::KnobTypes opt) {
 	if (opt == ADSREditor::ClassicKnobs) {
 		return classicAdsrUsableIndices;
+	} else if (opt == ADSREditor::ClassicKnobsNoShiftByIdx) {
+		return classAdsrNoShiftUsableIndices;
+	} else if (opt == ADSREditor::ClassicKnobsWithPeakNoShiftByIdx) {
+		return classApdsrNoShiftUsableIndices;
 	} else if (opt == ADSREditor::ClassicKnobsWithScaleByIdx) {
 		return classicAdsrWithScaleByIdxUsableIndices;
 	} else if (opt == ADSREditor::AsrWithPeaksKnobs) {
@@ -32,6 +40,8 @@ static const float (*parameterBoundsFromOptions(ADSREditor::KnobLimits opt))[2] 
 		return classicAdsrParameterBounds;
 	} else if (opt == ADSREditor::NormalizedDepthLimitsPlusOrMinus) {
 		return classicAdsrParameterBoundsPlusOrMinus;
+	} else if (opt == ADSREditor::FreqFilterDepthLimits) {
+		return classicAdsrFilterParameterBounds;
 	} else if (opt == ADSREditor::LFOFrequencyLimits) {
 		return lfoFreqParameterBounds;
 	}
