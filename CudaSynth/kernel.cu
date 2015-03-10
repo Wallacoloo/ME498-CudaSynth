@@ -328,8 +328,10 @@ namespace kernel {
 
 	struct SynthVoiceState {
 		FullBlockParameterInfo parameterInfo;
-		PartialState partialStates[NUM_THREADS_PER_PARTIAL][NUM_PARTIALS];
 		float sampleBuffer[CIRCULAR_BUFFER_LEN*NUM_CH];
+		// assume the GPU will require more threads than CPU,
+		// so allocate enough space for either CPU or GPU implementation
+		PartialState partialStates[NUM_THREADS_PER_PARTIAL_GPU][NUM_PARTIALS];
 	};
 
 	// Packages all the state-related information for the synth in one class to store persistently on the device
@@ -419,6 +421,10 @@ namespace kernel {
 		//only check for the presence of a device once.
 		static bool hasDevice = _hasCudaDevice();
 		return hasDevice;
+	}
+
+	int numThreadsPerPartial() {
+		return hasCudaDevice() ? NUM_THREADS_PER_PARTIAL_GPU : NUM_THREADS_PER_PARTIAL_CPU;
 	}
 
 	// code to run at shutdown (free buffers, etc)
@@ -597,14 +603,14 @@ namespace kernel {
 	}
 
 	// compute the output for ONE sine wave over the current block
-	__device__ __host__ void computePartialOutput(SynthState *synthState, unsigned voiceNum, unsigned baseIdx, unsigned partialIdx, unsigned threadIdWithinPartial, float fundamentalFreq, bool released) {
+	__device__ __host__ void computePartialOutput(SynthState *synthState, unsigned voiceNum, unsigned baseIdx, unsigned partialIdx, unsigned samplesPerThread, unsigned threadIdWithinPartial, float fundamentalFreq, bool released) {
 		SynthVoiceState *voiceState = &synthState->voiceStates[voiceNum];
 		PartialState* myState = &voiceState->partialStates[threadIdWithinPartial][partialIdx];
 		myState->atBlockStart(synthState, voiceState, partialIdx, fundamentalFreq, released);
 		// Get the base partial level (the hand-drawn frequency weights)
 		float level = (1.f / NUM_PARTIALS) * voiceState->parameterInfo.start.partialLevels[partialIdx];
 		//printf("partialIdx: %i\n", partialIdx);
-		for (unsigned sampleIdx = threadIdWithinPartial*NUM_SAMPLES_PER_THREAD; sampleIdx < (threadIdWithinPartial+1)*NUM_SAMPLES_PER_THREAD; ++sampleIdx) {
+		for (unsigned sampleIdx = threadIdWithinPartial*samplesPerThread; sampleIdx < (threadIdWithinPartial+1)*samplesPerThread; ++sampleIdx) {
 			// Extract the sinusoidal portion of the wave.
 			float sinusoid = myState->sinusoid.valueAtIdx(sampleIdx);
 			// Compute a secondary envelope that prevents aliasing
@@ -659,10 +665,10 @@ namespace kernel {
 		}
 	}
 
-	__global__ void evaluateSynthVoiceBlockKernel(SynthState *synthState, unsigned voiceNum, unsigned baseIdx, float fundamentalFreq, bool released) {
-		int partialNum = threadIdx.x;
-		int threadIdWithinPartial = blockIdx.x;
-		computePartialOutput(synthState, voiceNum, baseIdx, partialNum, threadIdWithinPartial, fundamentalFreq, released);
+	__global__ void evaluateSynthVoiceBlockKernel(SynthState *synthState, unsigned voiceNum, unsigned baseIdx, unsigned samplesPerThread, float fundamentalFreq, bool released) {
+	    unsigned partialNum = threadIdx.x;
+		unsigned threadIdWithinPartial = blockIdx.x;
+		computePartialOutput(synthState, voiceNum, baseIdx, partialNum, samplesPerThread, threadIdWithinPartial, fundamentalFreq, released);
 	}
 
 	__host__ void evaluateSynthVoiceBlockOnCpu(float bufferB[BUFFER_BLOCK_SIZE*NUM_CH], unsigned voiceNum, unsigned sampleIdx, float fundamentalFreq, bool released) {
@@ -670,9 +676,11 @@ namespace kernel {
 		std::unique_lock<std::mutex> stateLock(synthStateMutex);
 		// move pointer to d_synthState into a local for easy debugging
 		SynthState *synthState = d_synthState;
+		int threadsPerPartial = numThreadsPerPartial();
+		int samplesPerThread = BUFFER_BLOCK_SIZE / threadsPerPartial;
 		for (int partialIdx = 0; partialIdx < NUM_PARTIALS; ++partialIdx) {
-			for (int threadIdWithinPartial = 0; threadIdWithinPartial < NUM_THREADS_PER_PARTIAL; ++threadIdWithinPartial) {
-				computePartialOutput(synthState, voiceNum, sampleIdx, partialIdx, threadIdWithinPartial, fundamentalFreq, released);
+			for (int threadIdWithinPartial = 0; threadIdWithinPartial < threadsPerPartial; ++threadIdWithinPartial) {
+				computePartialOutput(synthState, voiceNum, sampleIdx, partialIdx, samplesPerThread, threadIdWithinPartial, fundamentalFreq, released);
 			}
 		}
 		unsigned bufferStartIdx = NUM_CH * (sampleIdx % CIRCULAR_BUFFER_LEN);
@@ -680,7 +688,9 @@ namespace kernel {
 	}
 
 	__host__ void evaluateSynthVoiceBlockCuda(float bufferB[BUFFER_BLOCK_SIZE*NUM_CH], unsigned voiceNum, unsigned sampleIdx, float fundamentalFreq, bool released) {
-		evaluateSynthVoiceBlockKernel << <NUM_THREADS_PER_PARTIAL, NUM_PARTIALS >> >(d_synthState, voiceNum, sampleIdx, fundamentalFreq, released);
+		unsigned threadsPerPartial = numThreadsPerPartial();
+		unsigned samplesPerThread = BUFFER_BLOCK_SIZE / threadsPerPartial;
+		evaluateSynthVoiceBlockKernel << <threadsPerPartial, NUM_PARTIALS >> >(d_synthState, voiceNum, sampleIdx, samplesPerThread, fundamentalFreq, released);
 
 		checkCudaError(cudaGetLastError()); //check if error in kernel launch
 		checkCudaError(cudaDeviceSynchronize()); //check for error INSIDE the kernel
@@ -749,13 +759,14 @@ namespace kernel {
 		doStartupOnce();
 		// need to go through and properly initialize all the note's state information:
 		//   partial phases, ADSR states, etc.
-		PartialState *partialStates = new PartialState[NUM_THREADS_PER_PARTIAL*NUM_PARTIALS];
-		for (int t = 0; t < NUM_THREADS_PER_PARTIAL; ++t) {
+		int threadsPerPartial = numThreadsPerPartial();
+		PartialState *partialStates = new PartialState[threadsPerPartial*NUM_PARTIALS];
+		for (int t = 0; t < threadsPerPartial; ++t) {
 			for (int i = 0; i < NUM_PARTIALS; ++i) {
 				partialStates[t*i] = PartialState(d_synthState, voiceNum, i);
 			}
 		}
-		memcpyHostToSynthState(&d_synthState->voiceStates[voiceNum].partialStates, partialStates, sizeof(PartialState)*NUM_THREADS_PER_PARTIAL*NUM_PARTIALS);
+		memcpyHostToSynthState(&d_synthState->voiceStates[voiceNum].partialStates, partialStates, sizeof(PartialState)*threadsPerPartial*NUM_PARTIALS);
 		memsetSynthState(&d_synthState->voiceStates[voiceNum].sampleBuffer, 0, CIRCULAR_BUFFER_LEN*NUM_CH*sizeof(float));
 		delete partialStates;
 	}
