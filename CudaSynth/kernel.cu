@@ -308,6 +308,82 @@ namespace kernel {
 		}
 	};
 
+	class FilterState {
+		ADSRState shiftState;
+		// have a bunch of piecewise linear functions.
+		// can split into y(w) = sum of yn(w)
+		// where yn(w) = { an*w + bn, Ln < w < Rn
+		//			       0, otherwise }
+		// This is achieved via two comparisons and two multiplies on top of evaluating an*w + bn.
+		// Alternatively:
+		// yn(w) = an*clamp(w, Ln, Rn) + bn
+		// This is just 2 extra min/max calls (same cost as a comparison)
+		// The catch is that yn(w) is not zero outside of its active domain
+		// we can actually go further:
+		// yn(w) = an*max(w, Ln) + bn
+		// merge the constants:
+		// y(w) = sum[an*max(w, Ln)] + b
+		// determining the coefficients becomes slightly more difficult. 
+		// an can be solved by knowing the slope along each interval.
+		// b can be solved by substituting y(0) = sum[an*Ln] + b
+		struct Piece {
+			float beginTime;
+			float slope;
+		};
+		Piece pieces[PIECEWISE_MAX_PIECES];
+		float b;
+		float freq_c0, freq_c1;
+	public:
+		__device__ __host__ void atBlockStart(FilterEnvelope *envStart, FilterEnvelope *envEnd, float freqStart, float freqEnd, bool released, bool didParamsChange) {
+			shiftState.atBlockStart(envStart->getShift(), envEnd->getShift(), 0, released, didParamsChange);
+			// set the frequency coefficients such that:
+			// w(idx) = freq_c0 + freq_c1*idx
+			// w(0) = freqStart,
+			// w(BUFFER_BLOCK_SIZE) = freqEnd,
+			freq_c0 = freqStart;
+			freq_c1 = (freqEnd - freqStart) * INV_BUFFER_BLOCK_SIZE;
+			// determine the coefficients.
+			// no filter interpolation for now, since that requires doubling the number of nodes
+			PiecewiseFunction *func = envEnd->getShape();
+			unsigned numActivePieces = func->numPoints();
+			float y0 = func->startLevelOfPiece(0);
+			float offsetSum = 0;
+			float prevSlope = 0.f;
+			for (unsigned i = 0; i < numActivePieces; ++i) {
+				float thisBeginTime = func->startTimeOfPiece(i);
+				float nextTime = func->startTimeOfPiece(i + 1);
+				float thisLength = nextTime - thisBeginTime;
+				float overallSlope = (i + 1 == numActivePieces) ? 0.f
+					: (func->startLevelOfPiece(i + 1) - func->startLevelOfPiece(i)) / thisLength;
+				float thisSlope = overallSlope - prevSlope;
+				prevSlope = overallSlope;
+				pieces[i].slope = thisSlope;
+				pieces[i].beginTime = thisBeginTime;
+				offsetSum += thisSlope*thisBeginTime;
+			}
+			// determine the coefficient 'b':
+			// y(0) = sum[slope_n*beginTime_n] + b
+			// b = y(0) - sum[slope_n*beginTime_n]
+			b = y0 - offsetSum;
+			// zero contributions from inactive pieces
+			for (unsigned i = numActivePieces; i < PIECEWISE_MAX_PIECES; ++i) {
+				pieces[i].slope = 0;
+				pieces[i].beginTime = 0;
+			}
+		}
+		__device__ __host__ float valueAtIdx(unsigned idx) const {
+			// y(w) = sum[an*max(w, Ln)] + b
+			float sum = b;
+			float w = freq_c0 + idx*freq_c1;
+			// transpose the envelope by shiftin the frequency
+			w -= shiftState.valueAtIdx(idx);
+			for (int i = 0; i < PIECEWISE_MAX_PIECES; ++i) {
+				sum += pieces[i].slope * max(w, pieces[i].beginTime);
+			}
+			return sum;
+		}
+	};
+
 	// Contains info about the parameter states at ANY sample in the block
 	struct FullBlockParameterInfo {
 		ParameterStates start;
@@ -321,6 +397,7 @@ namespace kernel {
 		ADSRLFOEnvelopeState stereoPanEnvelope;
 		DetuneEnvelopeState detuneEnvelope;
 		DelayEnvelopeState delayState;
+		FilterState filterState;
 		PartialState() {}
 		PartialState(struct SynthState *synthState, unsigned voiceNum, unsigned partialIdx) {}
 		__device__ __host__ void atBlockStart(SynthState *synthState, SynthVoiceState *voiceState, unsigned partialIdx, float fundamentalFreq, bool released);
@@ -332,6 +409,9 @@ namespace kernel {
 		// assume the GPU will require more threads than CPU,
 		// so allocate enough space for either CPU or GPU implementation
 		PartialState partialStates[NUM_THREADS_PER_PARTIAL_GPU][NUM_PARTIALS];
+		SynthVoiceState() {
+			memset(sampleBuffer, 0, sizeof(sampleBuffer));
+		}
 	};
 
 	// Packages all the state-related information for the synth in one class to store persistently on the device
@@ -362,11 +442,14 @@ namespace kernel {
 		float baseFreq = (partialIdx + 1)*fundamentalFreq;
 		float detuneStart = detuneEnvelope.valueAtIdx(0);
 		float detuneEnd = detuneEnvelope.valueAtIdx(BUFFER_BLOCK_SIZE);
+		float freqStart = baseFreq*(1.f + detuneStart);
+		float freqEnd = baseFreq*(1.f + detuneEnd);
 
 		// configure the sinusoid to transition from the starting frequency to the end frequency
-		sinusoid.newFrequencyAndDepth(baseFreq*(1.f+detuneStart), baseFreq*(1.f+detuneEnd), 1.f, 1.f);
+		sinusoid.newFrequencyAndDepth(freqStart, freqEnd, 1.f, 1.f);
 		volumeEnvelope.atBlockStart(&startParams->volumeEnvelope, &endParams->volumeEnvelope, partialIdx, released, didParamsChange);
 		stereoPanEnvelope.atBlockStart(&startParams->stereoPanEnvelope, &endParams->stereoPanEnvelope, partialIdx, released, didParamsChange);
+		filterState.atBlockStart(&startParams->filterEnvelope, &endParams->filterEnvelope, freqStart, freqEnd, released, didParamsChange);
 	}
 
 	static void printCudaDeviveProperties(cudaDeviceProp devProp) {
@@ -445,19 +528,18 @@ namespace kernel {
 	// code to run on first-time audio calculation
 	static void startup() {
 		atexit(&teardown);
-		//SynthState defaultState;
 		std::unique_lock<std::mutex> stateLock(synthStateMutex);
+		SynthState *defaultState = new SynthState();
 		if (hasCudaDevice()) {
 			// allocate sample buffer on device
 			checkCudaError(cudaMalloc(&d_synthState, sizeof(SynthState)));
-			checkCudaError(cudaMemset(d_synthState, 0, sizeof(SynthState)));
-			//checkCudaError(cudaMemcpy(d_synthState, &defaultState, sizeof(SynthState), cudaMemcpyHostToDevice));
+			checkCudaError(cudaMemcpy(d_synthState, defaultState, sizeof(SynthState), cudaMemcpyHostToDevice));
 		} else {
 			// allocate sample buffer on cpu
 			d_synthState = (SynthState*)malloc(sizeof(SynthState));
-			memset(d_synthState, 0, sizeof(SynthState));
-			//memcpy(d_synthState, &defaultState, sizeof(SynthState));
+			memcpy(d_synthState, defaultState, sizeof(SynthState));
 		}
+		delete defaultState;
 	}
 
 	static void doStartupOnce() {
@@ -615,9 +697,10 @@ namespace kernel {
 			float sinusoid = myState->sinusoid.valueAtIdx(sampleIdx);
 			// Compute a secondary envelope that prevents aliasing
 			float freq = myState->sinusoid.freqAtIdx(sampleIdx);
+			float filterEnv = myState->filterState.valueAtIdx(sampleIdx);
 			float antiAliasEnv = antiAliasedVolumeForFreq(freq);
 			// Get the ADSR/LFO volume envelope
-			float envelope = antiAliasEnv*myState->volumeEnvelope.productAtIdx(sampleIdx);
+			float envelope = antiAliasEnv*filterEnv*myState->volumeEnvelope.productAtIdx(sampleIdx);
 			float pan = myState->stereoPanEnvelope.sumAtIdx(sampleIdx);
 			float unpanned = level*envelope*sinusoid;
 			// full left = -1 pan. full right = +1 pan.

@@ -37,6 +37,9 @@
 //   but to create smooth transitions, we really interpolate between a fixed number of seeds
 #define DETUNE_NUM_SEEDS 4
 
+// for easier memory management, avoid building piecewise functions out of vectors; use a fixed array
+#define PIECEWISE_MAX_PIECES 8
+
 #define PI        3.14159265358979323846
 #define PIf       3.14159265358979323846f
 #define TWICE_PI  6.28318530717958647692
@@ -46,6 +49,8 @@
 #define SAMPLE_RATE 44100
 #define SAMPLE_RATE_RAD (SAMPLE_RATE*TWICE_PIf)
 #define INV_SAMPLE_RATE (1.f/SAMPLE_RATE)
+#define NYQUIST_RATE (0.5f*SAMPLE_RATE)
+#define NYQUIST_RATE_RAD (0.5f*SAMPLE_RATE_RAD)
 
 
 

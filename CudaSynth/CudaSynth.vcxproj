@@ -253,6 +253,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     <ClCompile Include="JuceLibraryCode\modules\juce_gui_extra\juce_gui_extra.cpp" />
     <ClCompile Include="ParameterEditor.cpp" />
     <ClCompile Include="PartialLevelsComponent.cpp" />
+    <ClCompile Include="PiecewiseEditor.cpp" />
     <ClCompile Include="PluginEditor.cpp" />
     <ClCompile Include="PluginProcessor.cpp" />
     <ClCompile Include="StandalonePlugin.cpp" />
@@ -264,6 +265,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     <ClInclude Include="kernel.h" />
     <ClInclude Include="ParameterEditor.h" />
     <ClInclude Include="PartialLevelsComponent.h" />
+    <ClInclude Include="PiecewiseEditor.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

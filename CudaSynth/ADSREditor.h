@@ -13,12 +13,15 @@ public:
 	// the ADSR envelope can be presented in a few different ways
 	enum KnobTypes {
 		ClassicKnobs,      // attack (startLevel=0.0), (peak=1.0), decay, sustain, release, (endLevel=0.0), stretchByFreq
+		ClassicKnobsNoShiftByIdx,
+		ClassicKnobsWithPeakNoShiftByIdx,
 		ClassicKnobsWithScaleByIdx,
 		AsrWithPeaksKnobs, // attack, startLevel, (no decay or peak), sustain, release, endLevel, stretchByFreq
 	};
 	enum KnobLimits {
 		NormalizedDepthLimits, // ADSR should have bounds [0, 1]
 		NormalizedDepthLimitsPlusOrMinus, // ADSR should have bounds [-1, 1]
+		FreqFilterDepthLimits,
 		LFOFrequencyLimits, //ADSR should have bounds[0, frequency limit]
 	};
 	ADSREditor(PluginEditor *editor, ADSR *adsr, const char* editorLabel, KnobTypes knobTypes, KnobLimits knobLimits);

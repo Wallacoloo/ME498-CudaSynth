@@ -14,7 +14,96 @@
 // sustain, end mode segments have finited length. Choose something long, but not so long that rounding errors arise
 #define ADSR_LONG_SEGMENT_LENGTH 4096.f
 
+// logic in kernel may depend upon no infinite-slope segments
+// floating point numbers can represent all integers up to 16,777,216 (2^24)
+#define PIECEWISE_MIN_PIECE_LENGTH 1.f
+
+
 namespace kernel {
+
+
+	class PiecewiseFunction {
+		// if a point has level=NAN, it should be considered as non-existent
+		// non-existent points should only be located at the END of the array
+		struct Point {
+			float time, level;
+		};
+		Point pieces[PIECEWISE_MAX_PIECES];
+	public:
+		PiecewiseFunction() {
+			for (int i = 0; i < PIECEWISE_MAX_PIECES; ++i) {
+				pieces[i].time = 0;
+				pieces[i].level = NAN;
+			}
+		}
+		HOST DEVICE float startTimeOfPiece(int pieceNum) const {
+			return pieces[pieceNum].time;
+		}
+		HOST DEVICE float startLevelOfPiece(int pieceNum) const {
+			return pieces[pieceNum].level;
+		}
+		HOST DEVICE unsigned numPoints() const {
+			for (int p = 0; p < PIECEWISE_MAX_PIECES; ++p) {
+				if (isnan(pieces[p].level)) {
+					return p;
+				}
+			}
+			return PIECEWISE_MAX_PIECES;
+		}
+		// shift the point and all following points such that:
+		//   this point starts at the absolute time newStartTime
+		//   and has level newLevel
+		// return the actual startTime (e.g. if we try to set a negative length)
+		float movePoint(int pointNum, float newStartTime, float newLevel) {
+			if (pointNum == 0) {
+				newStartTime = 0.f;
+			} else {
+				newStartTime = std::max(startTimeOfPiece(pointNum-1)+PIECEWISE_MIN_PIECE_LENGTH, newStartTime);
+			}
+			pieces[pointNum].level = newLevel;
+			float shiftAmt = newStartTime - pieces[pointNum].time;
+			for (int p = pointNum; p < numPoints(); ++p) {
+				pieces[p].time += shiftAmt;
+			}
+			return newStartTime;
+		}
+		// insert a new point with given time & level.
+		// return the index of said point
+		int insertPoint(float newStartTime, float newLevel) {
+			int nextPoint = numPoints();
+			// check if we can allocate a new point
+			if (nextPoint == PIECEWISE_MAX_PIECES) {
+				return -1;
+			}
+			// determine where to insert the point
+			int maxPBefore;
+			for (maxPBefore = 0; maxPBefore < nextPoint-1; ++maxPBefore) {
+				if (pieces[maxPBefore+1].time > newStartTime) {
+					break;
+				}
+			}
+			// insert the point by swapping our data with maxPBefore+1,
+			// and then pushing those changes down the line
+			float lastPointTime = newStartTime;
+			float lastPointLevel = newLevel;
+			for (int p = maxPBefore + 1; p <= nextPoint; ++p) {
+				std::swap(pieces[p].time, lastPointTime);
+				std::swap(pieces[p].level, lastPointLevel);
+			}
+			// return index of the point we inserted
+			return maxPBefore + 1;
+		}
+		void removePoint(int pointNum) {
+			int newNumPoints = numPoints() - 1;
+			// shift all points up
+			for (int p = pointNum; p < newNumPoints; ++p) {
+				std::swap(pieces[p].time, pieces[p + 1].time);
+				std::swap(pieces[p].level, pieces[p + 1].level);
+			}
+			// delete the previous point
+			pieces[newNumPoints].level = NAN;
+		}
+	};
 
 	class ADSR {
 	public:
@@ -241,6 +330,26 @@ namespace kernel {
 		}
 	};
 
+	class FilterEnvelope {
+		PiecewiseFunction shape;
+		ADSR shift;
+	public:
+		FilterEnvelope() {
+			shape.movePoint(0, 0, 0);
+			shape.movePoint(1, 0, 1);
+			shape.movePoint(2, NYQUIST_RATE_RAD, 1);
+			shape.movePoint(3, NYQUIST_RATE_RAD, 0);
+			shift.setSustain(0); // no shift
+			shift.setPeakLevel(0);
+		}
+		HOST DEVICE PiecewiseFunction* getShape() {
+			return &shape;
+		}
+		HOST DEVICE ADSR* getShift() {
+			return &shift;
+		}
+	};
+
 	// Struct to hold ALL parameter states at a single instant in time.
 	// There will be two of these sent during each synthesis block:
 	//   1 for at the start of the block,
@@ -255,6 +364,7 @@ namespace kernel {
 		ADSRLFOEnvelope stereoPanEnvelope;
 		DetuneEnvelope detuneEnvelope;
 		DelayEnvelope delayEnvelope;
+		FilterEnvelope filterEnvelope;
 		ParameterStates() {
 			UUID = nextUUID++;
 			// initialize partials to uniform level
