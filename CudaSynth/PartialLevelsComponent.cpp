@@ -28,7 +28,7 @@ void PartialLevelsComponent::paint(Graphics &g)
 		int pxPerPartial = getWidth() / NUM_PARTIALS;
 		int x = pxPerPartial * p;
 		int w = std::min(3, pxPerPartial - 1);
-		int top = getHeight() * (1.0 - partialLevels[p]);
+		int top = getHeight() * (1.0 - partialLevels[p]*NUM_PARTIALS);
 		//g.drawVerticalLine(x, top, getHeight());
 		g.fillRect(x, top, w, getHeight());
 	}
@@ -42,7 +42,7 @@ void PartialLevelsComponent::updateFromMouseEvent(const MouseEvent &event) {
 		float level = 1.0f - event.getPosition().getY() / (float)getHeight();
 		// clamp the level to between 0 and 1.
 		level = std::max(0.0f, std::min(1.0f, level));
-		partialLevels[partialIdx] = level;
+		partialLevels[partialIdx] = level / NUM_PARTIALS;
 		editor->parametersChanged();
 		repaint();
 	}

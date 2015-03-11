@@ -13,6 +13,18 @@
 
 #include "defines.h"
 
+// CUDA has fast sin/cos approximation intrinsics
+// The sacrifice is that denormalized numbers are flushed to zero (should be tolerable)
+// And sin(n*2*pi + x) is not exactly equal to sin(x) as it computes the modulus using a machine-approximation of 2*PI
+#ifdef __CUDA_ARCH__
+	#define FASTSINF(x) __sinf(x)
+	#define FASTCOSF(x) __cosf(x)
+	#define FASTSINCOSF(a, sptr, cptr) __sincosf(a, sptr, cptr)
+#else
+	#define FASTSINF(x) sinf(x)
+	#define FASTCOSF(x) cosf(x)
+	#define FASTSINCOSF(a, sptr, cptr) sincosf(a, sptr, cptr)
+#endif
 #define CIRCULAR_BUFFER_LEN MAX_DELAY_EFFECT_LENGTH
 
 namespace kernel {
@@ -57,7 +69,7 @@ namespace kernel {
 			// phase'(BUFFER_BLOCK_SIZE) = endW
 			// phase_c1 + 2*t*phase_c2 = endW
 			// phase_c2 = (endW - phase_c1) / (2*BUFFER_BLOCK_SIZE)
-			phase_c2 = (endW - phase_c1) / (2 * BUFFER_BLOCK_SIZE);
+			phase_c2 = (endW - phase_c1) * 0.5f * INV_BUFFER_BLOCK_SIZE;
 			// compute magnitude function coefficients
 			mag_c0 = startDepth;
 			float deltaDepth = endDepth - startDepth;
@@ -65,7 +77,7 @@ namespace kernel {
 			
 		}
 		__device__ __host__ float valueAtIdx(unsigned idx) const {
-			return magAtIdx(idx)*sinf(phaseAtIdx(idx));
+			return magAtIdx(idx)*FASTSINF(phaseAtIdx(idx));
 		}
 		__device__ __host__ float freqAtIdx(unsigned idx) const {
 			// freq = d/dt (phase)
@@ -85,8 +97,8 @@ namespace kernel {
 			for (int row = 0; row < DETUNE_NUM_SEEDS; ++row) {
 				rng.seed(seedGen());
 				for (int partial = 0; partial < NUM_PARTIALS; ++partial) {
-					// generate a normalized random number (0 - 1)
-					float normRand = (float)rng() / 2147483647;
+					// generate a normalized random number [0, 1)
+					float normRand = (float)rng() / 2147483648.f;
 					// turn this into a symmetric distribution from (-1, 1) centered at 0.
 					float doubleSided = -1 + 2 * normRand;
 					randomValues[row][partial] = doubleSided;
@@ -102,7 +114,7 @@ namespace kernel {
 			float value = 0.f;
 			for (int curSeed = 0; curSeed < DETUNE_NUM_SEEDS; ++curSeed) {
 				float distance = seedNo - curSeed / (float)(DETUNE_NUM_SEEDS - 1);
-				float weight = 1 - distance*distance;
+				float weight = 1.f - distance*distance;
 				value += weight * randomValues[curSeed][partialIdx];
 			}
 			return value;
@@ -626,33 +638,10 @@ namespace kernel {
 		unsigned bufferIdx = NUM_CH * (sampleIdx % CIRCULAR_BUFFER_LEN);
 #ifdef __CUDA_ARCH__
 		//device code
-		// This reduction method requires a temporary array in shared memory.
-		/*__shared__ float partialReductionOutputs[NUM_PARTIALS*NUM_CH];
-
-		partialReductionOutputs[NUM_CH*partialIdx + 0] = outputL;
-		partialReductionOutputs[NUM_CH*partialIdx + 1] = outputR;
-		unsigned numActiveThreads = NUM_PARTIALS / 2;
-		while (numActiveThreads > 0) {
-			__syncthreads();
-			if (partialIdx < numActiveThreads) {
-				partialReductionOutputs[NUM_CH*partialIdx + 0] += partialReductionOutputs[NUM_CH*partialIdx + numActiveThreads*NUM_CH + 0];
-				partialReductionOutputs[NUM_CH*partialIdx + 1] += partialReductionOutputs[NUM_CH*partialIdx + numActiveThreads*NUM_CH + 1];
-			}
-			numActiveThreads /= 2;
-		}
-		if (partialIdx == 0) {
-			// add output to buffer (atomically)
-			atomicAdd(&voiceState->sampleBuffer[bufferIdx + 0], partialReductionOutputs[0]);
-			atomicAdd(&voiceState->sampleBuffer[bufferIdx + 1], partialReductionOutputs[1]);
-			//unsigned nextIdx = NUM_CH * ((sampleIdx + 40000) % (CIRCULAR_BUFFER_LEN));
-			//atomicAdd(&voiceState->sampleBuffer[nextIdx + 0], partialReductionOutputs[0]);
-			//atomicAdd(&voiceState->sampleBuffer[nextIdx + 1], partialReductionOutputs[1]);
-		}*/
 		atomicAdd(&voiceState->sampleBuffer[bufferIdx + 0], outputL);
 		atomicAdd(&voiceState->sampleBuffer[bufferIdx + 1], outputR);
 #else
 		//host code
-		//Since everything's computed iteratively, we can just add our outputs directly to the buffer.
 		voiceState->sampleBuffer[bufferIdx + 0] += outputL;
 		voiceState->sampleBuffer[bufferIdx + 1] += outputR;
 #endif
@@ -690,7 +679,7 @@ namespace kernel {
 		PartialState* myState = &voiceState->partialStates[threadIdWithinPartial][partialIdx];
 		myState->atBlockStart(synthState, voiceState, partialIdx, fundamentalFreq, released);
 		// Get the base partial level (the hand-drawn frequency weights)
-		float level = (1.f / NUM_PARTIALS) * voiceState->parameterInfo.start.partialLevels[partialIdx];
+		float level = voiceState->parameterInfo.start.partialLevels[partialIdx];
 		//printf("partialIdx: %i\n", partialIdx);
 		for (unsigned sampleIdx = threadIdWithinPartial*samplesPerThread; sampleIdx < (threadIdWithinPartial+1)*samplesPerThread; ++sampleIdx) {
 			// Extract the sinusoidal portion of the wave.
@@ -721,8 +710,10 @@ namespace kernel {
 			// So, L(pan) = cos(pi/4 + pi/4*pan) = cos(pi/4*(1+pan))
 			//     R(pan) = sin(pi/4 + pi/4*pan) = sin(pi/4*(1+pan))
 			float angle = PIf / 4 * (1 + pan);
-			float outputL = unpanned * cosf(angle);
-			float outputR = unpanned * sinf(angle);
+			float sinAng, cosAng;
+			FASTSINCOSF(angle, &sinAng, &cosAng);
+			float outputL = unpanned * cosAng;
+			float outputR = unpanned * sinAng;
 			// alternative linear pan implementation:
 			// float outputL = unpanned * 0.5*(1 - pan);
 			// float outputR = unpanned * 0.5*(1 + pan);
@@ -732,11 +723,13 @@ namespace kernel {
 			float delayPerEcho = myState->delayState.spaceBetweenEchoesAtIdx(sampleIdx);
 			float ampLossPerEcho = myState->delayState.amplitudeLostPerEchoAtIdx(sampleIdx);
 			unsigned delayPerEchoInSamples = delayPerEcho*SAMPLE_RATE;
-			for (unsigned echoIdx = 1; echoIdx <= MAX_DELAY_ECHOES; ++echoIdx) {
-				unsigned curDelayIdx = echoIdx * delayPerEchoInSamples;
-				float curAmp = max(0.f, 1.f - echoIdx*ampLossPerEcho);
-				//if (curAmp <= 0.f) { break; }
-				reduceDelayOutputs(voiceState, partialIdx, baseIdx + sampleIdx + curDelayIdx, curAmp*outputL, curAmp*outputR);
+			for (unsigned echoVoiceIdx = 1; echoVoiceIdx <= MAX_DELAY_ECHOES; ++echoVoiceIdx) {
+				unsigned curDelayIdx = echoVoiceIdx * delayPerEchoInSamples;
+				// add an offset of echoVoiceIdx so that we can avoid the case where all partials are delayed by the same amount,
+				// which would force serialization of atomicWrites
+				unsigned absDelayIdx = baseIdx + sampleIdx + echoVoiceIdx + curDelayIdx;
+				float curAmp = max(0.f, 1.f - echoVoiceIdx*ampLossPerEcho);
+				reduceDelayOutputs(voiceState, partialIdx, absDelayIdx, curAmp*outputL, curAmp*outputR);
 			}
 		}
 		updateVoiceParametersIfNeeded(voiceState, voiceNum, partialIdx);

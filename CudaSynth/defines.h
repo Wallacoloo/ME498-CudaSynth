@@ -1,8 +1,6 @@
 #ifndef DEFINES_H
 #define DEFINES_H
 
-#include "AppConfig.h"
-
 // set to 1 to disable CUDA even on cuda-enabled machines
 #ifndef NEVER_USE_CUDA
 #define NEVER_USE_CUDA 1

@@ -369,7 +369,7 @@ namespace kernel {
 			UUID = nextUUID++;
 			// initialize partials to uniform level
 			for (int p = 0; p < NUM_PARTIALS; ++p) {
-				partialLevels[p] = 0.5;
+				partialLevels[p] = 0.5f / NUM_PARTIALS;
 			}
 			// default to no volume LFO
 			volumeEnvelope.getLfo()->getDepthAdsr()->setSustain(0.f);
