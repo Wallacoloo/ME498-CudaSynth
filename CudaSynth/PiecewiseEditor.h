@@ -1,7 +1,7 @@
 #ifndef PIECEWISEEDITOR_H
 #define PIECEWISEEDITOR_H
 
-#include "../JuceLibraryCode/JuceHeader.h"
+#include "JuceLibraryCode/JuceHeader.h"
 #include "kernel.h"
 
 class PluginEditor;

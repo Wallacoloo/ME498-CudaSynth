@@ -1,7 +1,7 @@
 #ifndef PARTIALLEVELSCOMPONENT_H
 #define PARTIALLEVELSCOMPONENT_H
 
-#include "../JuceLibraryCode/JuceHeader.h"
+#include "JuceLibraryCode/JuceHeader.h"
 
 class PluginEditor;
 

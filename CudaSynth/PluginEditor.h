@@ -1,7 +1,7 @@
 #ifndef __PLUGINEDITOR_H_4ACCBAA__
 #define __PLUGINEDITOR_H_4ACCBAA__
 
-#include "../JuceLibraryCode/JuceHeader.h"
+#include "JuceLibraryCode/JuceHeader.h"
 #include "PluginProcessor.h"
 #include "PartialLevelsComponent.h"
 #include "ADSREditor.h"

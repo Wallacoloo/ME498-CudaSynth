@@ -1,7 +1,7 @@
 #ifndef ADSREDITOR_H
 #define ADSREDITOR_H
 
-#include "../JuceLibraryCode/JuceHeader.h"
+#include "JuceLibraryCode/JuceHeader.h"
 #include "ParameterEditor.h"
 
 class PluginEditor;

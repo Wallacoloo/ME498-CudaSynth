@@ -1,6 +1,8 @@
 #ifndef DEFINES_H
 #define DEFINES_H
 
+#include "AppConfig.h"
+
 // set to 1 to disable CUDA even on cuda-enabled machines
 #ifndef NEVER_USE_CUDA
 #define NEVER_USE_CUDA 1
@@ -10,10 +12,10 @@
 // This macro serves to avoid placing magic numbers in our code - it is assumed this will always be 2.
 #define NUM_CH 2
 // Number of partials to include in the sound.
-#define NUM_PARTIALS 4
+#define NUM_PARTIALS 16
 
 // The maximum number of notes that can be played simultaneously.
-#define MAX_SIMULTANEOUS_SYNTH_NOTES 4
+#define MAX_SIMULTANEOUS_SYNTH_NOTES 2
 
 // number of samples to buffer at a time.
 // larger numbers means fewer transfefs between CPU / GPU,

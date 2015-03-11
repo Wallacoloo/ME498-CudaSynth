@@ -1,7 +1,7 @@
 #ifndef PARAMETEREDITOR_H
 #define PARAMETEREDITOR_H
 
-#include "../JuceLibraryCode/JuceHeader.h"
+#include "JuceLibraryCode/JuceHeader.h"
 #include "kernel.h"
 
 class PluginEditor;

@@ -8,7 +8,7 @@ Author:  Colin
 ==============================================================================
 */
 
-#include "../JuceLibraryCode/JuceHeader.h"
+#include "JuceLibraryCode/JuceHeader.h"
 #include "juce_audio_plugin_client/Standalone/juce_StandaloneFilterWindow.h"
 
 class StandalonePlugin : public JUCEApplication
