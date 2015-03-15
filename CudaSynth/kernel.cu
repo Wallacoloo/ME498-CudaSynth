@@ -673,42 +673,32 @@ namespace kernel {
 		return level;
 	}
 
-	// compute the output for ONE sine wave over the current block
+	// compute the output for ONE sine wave over a section of the current sample block
 	__device__ __host__ void computePartialOutput(SynthState *synthState, unsigned voiceNum, unsigned baseIdx, unsigned partialIdx, unsigned samplesPerThread, unsigned threadIdWithinPartial, float fundamentalFreq, bool released) {
 		SynthVoiceState *voiceState = &synthState->voiceStates[voiceNum];
 		PartialState* myState = &voiceState->partialStates[threadIdWithinPartial][partialIdx];
 		myState->atBlockStart(synthState, voiceState, partialIdx, fundamentalFreq, released);
 		// Get the base partial level (the hand-drawn frequency weights)
 		float level = voiceState->parameterInfo.start.partialLevels[partialIdx];
-		//printf("partialIdx: %i\n", partialIdx);
 		for (unsigned sampleIdx = threadIdWithinPartial*samplesPerThread; sampleIdx < (threadIdWithinPartial+1)*samplesPerThread; ++sampleIdx) {
 			// Extract the sinusoidal portion of the wave.
 			float sinusoid = myState->sinusoid.valueAtIdx(sampleIdx);
-			// Compute a secondary envelope that prevents aliasing
+
+			// Compute the filter envelope and a secondary envelope that prevents aliasing
 			float freq = myState->sinusoid.freqAtIdx(sampleIdx);
-			float filterEnv = myState->filterState.valueAtIdx(sampleIdx);
 			float antiAliasEnv = antiAliasedVolumeForFreq(freq);
+			float filterEnv = myState->filterState.valueAtIdx(sampleIdx);
+
 			// Get the ADSR/LFO volume envelope
 			float envelope = antiAliasEnv*filterEnv*myState->volumeEnvelope.productAtIdx(sampleIdx);
 			float pan = myState->stereoPanEnvelope.sumAtIdx(sampleIdx);
 			float unpanned = level*envelope*sinusoid;
+
 			// full left = -1 pan. full right = +1 pan.
-			// Use circular panning, where L^2 + R^2 = 1.0
-			//   R(+1.0 pan) = 1.0, L(-1.0 pan) = 0.0, R(0.0 pan) = sqrt(1/2)
-			//   L(+1.0 pan) = 0.0, L(-1.0 pan) = 1.0, L(0.0 pan) = sqrt(1/2)
-			//   then R(pan) = sqrt((1+pan)/2)
-			//   L(pan) = sqrt((1-pan)/2)
-			// Note that L(pan)^2 + R(pan)^2 = 1.0, so energy is constant.
-			// Must deal with pan values of magnitude > 1.0
-			// Note the analog between sinusoidals:
-			// sin(x)^2 + cos(x)^2 = 1.0 = L(pan)^2 + R(pan)^2
-			// sin(pi/4) = cos(pi/4) = L(0.0) = R(0.0) = sqrt(1/2)
-			// cos(0.0) = L(-1.0) = 1.0
-			// cos(pi/2) = L(1.0) = 0.0
-			// sin(0.0) = R(-1.0) = 0.0
-			// sin(pi/2) = R(1.0) = 1.0
-			// So, L(pan) = cos(pi/4 + pi/4*pan) = cos(pi/4*(1+pan))
-			//     R(pan) = sin(pi/4 + pi/4*pan) = sin(pi/4*(1+pan))
+			// Use circular panning, where L^2 + R^2 = 1.0 (constant energy)
+			// Let L(a) = cos(p(a)), R(a) = sin(p(a))
+			// L(-1) = 1.0 = cos(p(-1)) therefore p(-1) = 0.0
+			// L(+1) = 0.0 = cos(p(+1)) therefore p(+1) = Pi/2
 			float angle = PIf / 4 * (1 + pan);
 			float sinAng, cosAng;
 			FASTSINCOSF(angle, &sinAng, &cosAng);
@@ -717,9 +707,11 @@ namespace kernel {
 			// alternative linear pan implementation:
 			// float outputL = unpanned * 0.5*(1 - pan);
 			// float outputR = unpanned * 0.5*(1 + pan);
-			// write the output to the buffer, using a reduction algorithm to avoid serialization
+
+			// sum the output to the buffer, using a reduction algorithm to avoid serialization
 			reduceOutputs(voiceState, partialIdx, baseIdx + sampleIdx, outputL, outputR);
-			// compute delays
+
+			// compute echoes
 			float delayPerEcho = myState->delayState.spaceBetweenEchoesAtIdx(sampleIdx);
 			float ampLossPerEcho = myState->delayState.amplitudeLostPerEchoAtIdx(sampleIdx);
 			unsigned delayPerEchoInSamples = delayPerEcho*SAMPLE_RATE;
