@@ -1,6 +1,10 @@
 # ME498-CudaSynth
 VST synthesizer that offloads processing to Cuda-enabled devices
 
+Demo
+=======
+[Demo Video 1](https://www.youtube.com/watch?v=xUN_3zn8Ivk) (3:01)
+
 Prerequisites
 ========
 To build this you will need the Steinberg VST SDK.
